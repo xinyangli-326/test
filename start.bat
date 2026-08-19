@@ -1,0 +1,13 @@
+@echo off
+cd /d "%~dp0"
+if "%OPENAI_API_KEY%"=="" (
+  echo [??] ???? OPENAI_API_KEY
+  echo ????: setx OPENAI_API_KEY "??API??"
+  echo ??????????????? start.bat
+  pause
+  exit /b 1
+)
+python -m pip install -r requirements.txt
+start "" http://127.0.0.1:8000
+python server.py
+pause
