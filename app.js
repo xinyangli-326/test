@@ -24,6 +24,12 @@ function puterText(response) {
   if (Array.isArray(content)) return content.map(item => item?.text || item?.content || '').join('\n');
   return String(response || '');
 }
+const IS_GITHUB_PAGES = window.location.hostname.endsWith('github.io');
+async function ensurePuterAuth() {
+  if (!window.puter?.auth || !window.puter?.ai) throw new Error('公共AI组件未加载，请按 Ctrl+F5 刷新页面');
+  const signedIn = await Promise.resolve(window.puter.auth.isSignedIn());
+  if (!signedIn) await window.puter.auth.signIn();
+}
 async function puterChat(prompt, options = {}) {
   if (!window.puter?.ai?.chat) throw new Error('Puter AI 未加载，请刷新页面后重试');
   return puterText(await window.puter.ai.chat(prompt, options));
@@ -82,8 +88,10 @@ $('research').onclick = async event => {
   button.textContent = '联网研究中…';
   const payload = { product:$('product').value, category_name:knowledge.categories[$('category').value].name, urls:[] };
   try {
+    if (IS_GITHUB_PAGES) await ensurePuterAuth();
     let content;
     try {
+      if (IS_GITHUB_PAGES) throw new Error('使用公共AI');
       content = (await apiRequest('/api/research', payload, 8000)).content;
     } catch (apiError) {
       content = await puterChat(`请联网研究酒店行业主题“${payload.product}”，服务于${payload.category_name}内容创作。重点查找最新公开趋势、目标人群、竞品做法、社媒高互动选题、采购或运营问题。输出：可验证事实、来源、竞品启发、可执行选题、风险与数据口径。不要复制原文，不确定的信息要明确说明。`, {tools:[{type:'web_search'}]});
@@ -100,8 +108,10 @@ $('generate').onclick = async event => {
   const payload = { category:$('category').value, product:$('product').value, persona:$('persona').value, channel:$('channel').value, content_type:$('contentType').value, extra:$('extra').value, research, style_samples:$('samples').value };
   const categoryName = knowledge.categories[payload.category].name;
   try {
+    if (IS_GITHUB_PAGES) await ensurePuterAuth();
     let content;
     try {
+      if (IS_GITHUB_PAGES) throw new Error('使用公共AI');
       content = (await apiRequest('/api/generate', payload, 12000)).content;
     } catch (apiError) {
       const prompt = `你是携程酒店服务市场的资深酒店营销专家。请为以下任务生成具体、完整、可直接发布的中文内容。\n知识库：${categoryName}\n产品/主题：${payload.product}\n目标视角：${payload.persona}\n发布渠道：${payload.channel}\n内容类型：${payload.content_type}\n补充信息：${payload.extra || '无'}\n联网研究：${payload.research || '无'}\n风格样本：${payload.style_samples || '无'}\n要求：必须具体回答目标人群、真实场景、客户痛点、产品价值、转化动作、关键指标和风险。朋友圈输出3条180-350字长文案；小红书输出完整种草或知识型成稿；公众号输出具体标题、导语、详细正文和CTA；其他渠道按其使用场景输出完整成稿。内部数据写成参考值，不得编造平台规则。`;
@@ -188,8 +198,10 @@ $('generatePosterCopy').onclick=async event=>{
   $('posterCopyStatus').textContent='正在生成海报标题、卖点和行动按钮…';
   const payload={product:$('product').value,category_name:knowledge.categories[$('category').value].name,goal:$('posterGoal').value,persona:$('persona').value};
   try {
+    if (IS_GITHUB_PAGES) await ensurePuterAuth();
     let copy;
     try {
+      if (IS_GITHUB_PAGES) throw new Error('使用公共AI');
       copy=await apiRequest('/api/poster-copy',payload,8000);
     } catch(apiError) {
       const prompt=`为Trip MALL携程酒店服务市场生成一套竖版营销海报短文案。产品：${payload.product}；知识库：${payload.category_name}；营销目标：${payload.goal}；目标视角：${payload.persona}。只返回JSON：{"eyebrow":"12字以内","headline":"14字以内","subheadline":"24字以内","price":"16字以内核心利益","features":["8字以内","8字以内","8字以内"],"metrics":[{"value":"短词或数字","label":"8字以内"},{"value":"短词或数字","label":"8字以内"},{"value":"短词或数字","label":"8字以内"}],"cta":"12字以内"}。没有可靠数字时用省心、专业、快速等利益点，不编造数据。`;
@@ -208,8 +220,10 @@ $('addSticker').onclick=async event=>{
   if(protectedNames.some(name=>subject.includes(name))) return alert('商业IP请上传已授权透明PNG；AI只生成原创或通用角色。');
   button.textContent='生成贴纸中…';
   try {
+    if (IS_GITHUB_PAGES) await ensurePuterAuth();
     let image;
     try {
+      if (IS_GITHUB_PAGES) throw new Error('使用公共AI');
       const data=await apiRequest('/api/sticker',{subject},15000);
       image=new Image(); image.src=data.image; await image.decode();
     } catch(apiError) {
@@ -224,8 +238,10 @@ $('aiBg').onclick=async event=>{
   const payload={product:$('product').value,style:$('posterStyle').value,elements:$('stickerPrompt').value};
   button.textContent='生成底图中…';
   try {
+    if (IS_GITHUB_PAGES) await ensurePuterAuth();
     let image;
     try {
+      if (IS_GITHUB_PAGES) throw new Error('使用公共AI');
       const data=await apiRequest('/api/poster',payload,20000);
       image=new Image(); image.src=data.image; await image.decode();
     } catch(apiError) {
@@ -237,6 +253,7 @@ $('aiBg').onclick=async event=>{
 };
 $('download').onclick=()=>{selected=null;draw();const anchor=document.createElement('a');anchor.download='TripMALL营销海报.png';anchor.href=canvas.toDataURL('image/png');anchor.click();};
 applyPosterCopy(localPosterCopy());
+
 
 
 
