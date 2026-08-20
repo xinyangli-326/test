@@ -2,6 +2,39 @@ const $ = id => document.getElementById(id);
 const API_BASE = (window.TRIP_MALL_CONFIG?.API_BASE || '').replace(/\/$/, '');
 const apiUrl = path => API_BASE + path;
 
+async function apiRequest(path, payload, timeoutMs = 10000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(apiUrl(path), {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload), signal: controller.signal
+    });
+    const contentType = response.headers.get('content-type') || '';
+    if (!response.ok || !contentType.includes('application/json')) throw new Error(`公网API不可用（${response.status}）`);
+    const data = await response.json();
+    if (data.error) throw new Error(data.error);
+    return data;
+  } finally { clearTimeout(timer); }
+}
+function puterText(response) {
+  if (typeof response === 'string') return response;
+  const content = response?.message?.content ?? response?.content ?? response?.text;
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) return content.map(item => item?.text || item?.content || '').join('\n');
+  return String(response || '');
+}
+async function puterChat(prompt, options = {}) {
+  if (!window.puter?.ai?.chat) throw new Error('Puter AI 未加载，请刷新页面后重试');
+  return puterText(await window.puter.ai.chat(prompt, options));
+}
+function extractJson(text) {
+  const cleaned = text.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim();
+  const start = cleaned.indexOf('{'), end = cleaned.lastIndexOf('}');
+  if (start < 0 || end < start) throw new Error('AI返回的JSON格式不完整');
+  return JSON.parse(cleaned.slice(start, end + 1));
+}
+
 const LOCAL_CATEGORIES = {
   product: { name: '产品类知识库', content_types: ['专业知识','采购指南','优品推荐','优惠福利','内容互动','其他'], topics: ['宠物友好房','亲子房','影音房','舒睡房'] },
   platform: { name: '平台类知识库', content_types: ['功能科普','操作指南','问题解答','平台好物','旅拍合作','内容互动'], topics: ['下单流程','订单查询','售后申请','酒店用品推荐','旅拍合作'] },
@@ -46,26 +79,36 @@ fetch(apiUrl('/api/knowledge')).then(response => {
 
 $('research').onclick = async event => {
   const button = event.currentTarget;
-  button.textContent = '研究中…';
+  button.textContent = '联网研究中…';
+  const payload = { product:$('product').value, category_name:knowledge.categories[$('category').value].name, urls:[] };
   try {
-    const response = await fetch(apiUrl('/api/research'), { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ product:$('product').value, category_name:knowledge.categories[$('category').value].name, urls:[] }) });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error);
-    research = data.content;
+    let content;
+    try {
+      content = (await apiRequest('/api/research', payload, 8000)).content;
+    } catch (apiError) {
+      content = await puterChat(`请联网研究酒店行业主题“${payload.product}”，服务于${payload.category_name}内容创作。重点查找最新公开趋势、目标人群、竞品做法、社媒高互动选题、采购或运营问题。输出：可验证事实、来源、竞品启发、可执行选题、风险与数据口径。不要复制原文，不确定的信息要明确说明。`, {tools:[{type:'web_search'}]});
+    }
+    research = content;
     $('samples').value = `【联网研究】\n${research}\n\n${$('samples').value}`;
-  } catch (error) { alert(`联网研究暂不可用：${error.message}`); }
+    alert('联网研究完成，结果已写入风格学习区域。');
+  } catch (error) { alert(`联网研究失败：${error.message}`); }
   finally { button.textContent = '联网研究'; }
 };
 $('generate').onclick = async event => {
   const button = event.currentTarget;
-  button.textContent = '生成中…';
+  button.textContent = 'AI生成中…';
   const payload = { category:$('category').value, product:$('product').value, persona:$('persona').value, channel:$('channel').value, content_type:$('contentType').value, extra:$('extra').value, research, style_samples:$('samples').value };
+  const categoryName = knowledge.categories[payload.category].name;
   try {
-    const response = await fetch(apiUrl('/api/generate'), { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error);
-    $('result').textContent = data.content;
-  } catch (error) { $('result').textContent = `生成暂不可用：${error.message}\n\n请通过 start.bat 启动后访问 http://127.0.0.1:8000。`; }
+    let content;
+    try {
+      content = (await apiRequest('/api/generate', payload, 12000)).content;
+    } catch (apiError) {
+      const prompt = `你是携程酒店服务市场的资深酒店营销专家。请为以下任务生成具体、完整、可直接发布的中文内容。\n知识库：${categoryName}\n产品/主题：${payload.product}\n目标视角：${payload.persona}\n发布渠道：${payload.channel}\n内容类型：${payload.content_type}\n补充信息：${payload.extra || '无'}\n联网研究：${payload.research || '无'}\n风格样本：${payload.style_samples || '无'}\n要求：必须具体回答目标人群、真实场景、客户痛点、产品价值、转化动作、关键指标和风险。朋友圈输出3条180-350字长文案；小红书输出完整种草或知识型成稿；公众号输出具体标题、导语、详细正文和CTA；其他渠道按其使用场景输出完整成稿。内部数据写成参考值，不得编造平台规则。`;
+      content = await puterChat(prompt);
+    }
+    $('result').textContent = content;
+  } catch (error) { $('result').textContent = `AI生成失败：${error.message}\n\n首次使用可能需要登录 Puter，请允许弹窗并完成登录。`; }
   finally { button.textContent = '生成具体内容 →'; }
 };
 
@@ -140,17 +183,60 @@ function applyPosterCopy(copy) {
   selected=null; draw();
 }
 $('generatePosterCopy').onclick=async event=>{
-  const button=event.currentTarget; button.textContent='生成中…'; $('posterCopyStatus').textContent='正在根据知识库、目标和视角生成文案…';
-  const fallback=localPosterCopy();
+  const button=event.currentTarget;
+  button.textContent='AI生成中…';
+  $('posterCopyStatus').textContent='正在生成海报标题、卖点和行动按钮…';
+  const payload={product:$('product').value,category_name:knowledge.categories[$('category').value].name,goal:$('posterGoal').value,persona:$('persona').value};
   try {
-    const response=await fetch(apiUrl('/api/poster-copy'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({product:$('product').value,category_name:knowledge.categories[$('category').value].name,goal:$('posterGoal').value,persona:$('persona').value})});
-    const data=await response.json(); if(!response.ok)throw new Error(data.error); applyPosterCopy(data); $('posterCopyStatus').textContent='AI海报文案已生成，每个文字层都可单独拖动和修改。';
-  } catch(error) { applyPosterCopy(fallback); $('posterCopyStatus').textContent='已使用本地知识库生成文案；启动AI服务后可进一步优化。'; }
-  finally { button.textContent='生成海报文案并自动排版'; }
+    let copy;
+    try {
+      copy=await apiRequest('/api/poster-copy',payload,8000);
+    } catch(apiError) {
+      const prompt=`为Trip MALL携程酒店服务市场生成一套竖版营销海报短文案。产品：${payload.product}；知识库：${payload.category_name}；营销目标：${payload.goal}；目标视角：${payload.persona}。只返回JSON：{"eyebrow":"12字以内","headline":"14字以内","subheadline":"24字以内","price":"16字以内核心利益","features":["8字以内","8字以内","8字以内"],"metrics":[{"value":"短词或数字","label":"8字以内"},{"value":"短词或数字","label":"8字以内"},{"value":"短词或数字","label":"8字以内"}],"cta":"12字以内"}。没有可靠数字时用省心、专业、快速等利益点，不编造数据。`;
+      copy=extractJson(await puterChat(prompt));
+    }
+    applyPosterCopy(copy);
+    $('posterCopyStatus').textContent='AI海报文案已生成，每个文字层都可拖动和修改。';
+  } catch(error) {
+    applyPosterCopy(localPosterCopy());
+    $('posterCopyStatus').textContent=`AI暂不可用，已使用本地知识库排版：${error.message}`;
+  } finally { button.textContent='生成海报文案并自动排版'; }
 };
-$('addSticker').onclick=async event=>{const button=event.currentTarget;button.textContent='生成中…';try{const response=await fetch(apiUrl('/api/sticker'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({subject:$('stickerPrompt').value})});const data=await response.json();if(!response.ok)throw new Error(data.error);const image=new Image();image.onload=()=>addObject({type:'image',image,x:760,y:850,width:image.width,height:image.height,scale:.35,rotation:0});image.src=data.image;}catch(error){alert(error.message);}finally{button.textContent='AI生成贴纸';}};
-$('aiBg').onclick=async event=>{const button=event.currentTarget;button.textContent='生成中…';try{const response=await fetch(apiUrl('/api/poster'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({product:$('product').value,style:$('posterStyle').value,elements:$('stickerPrompt').value})});const data=await response.json();if(!response.ok)throw new Error(data.error);const image=new Image();image.onload=()=>{backgroundImage=image;draw();};image.src=data.image;}catch(error){alert(error.message);}finally{button.textContent='AI生成底图';}};
+$('addSticker').onclick=async event=>{
+  const button=event.currentTarget, subject=$('stickerPrompt').value;
+  const protectedNames=['小黄人','蛋仔派对','迪士尼','玲娜贝儿','奥特曼','宝可梦'];
+  if(protectedNames.some(name=>subject.includes(name))) return alert('商业IP请上传已授权透明PNG；AI只生成原创或通用角色。');
+  button.textContent='生成贴纸中…';
+  try {
+    let image;
+    try {
+      const data=await apiRequest('/api/sticker',{subject},15000);
+      image=new Image(); image.src=data.image; await image.decode();
+    } catch(apiError) {
+      if(!window.puter?.ai?.txt2img) throw new Error('Puter图片服务未加载');
+      image=await window.puter.ai.txt2img(`原创可爱贴纸：${subject}。透明背景，完整角色，粗线条轮廓，商业贴纸质感，无文字，无Logo，不模仿任何版权角色。`,{model:'gpt-image-1',ratio:'1:1',transparent_background:true});
+    }
+    addObject({type:'image',image,x:760,y:850,width:image.naturalWidth||image.width,height:image.naturalHeight||image.height,scale:.35,rotation:0});
+  } catch(error){alert(`贴纸生成失败：${error.message}`);} finally {button.textContent='AI生成贴纸';}
+};
+$('aiBg').onclick=async event=>{
+  const button=event.currentTarget;
+  const payload={product:$('product').value,style:$('posterStyle').value,elements:$('stickerPrompt').value};
+  button.textContent='生成底图中…';
+  try {
+    let image;
+    try {
+      const data=await apiRequest('/api/poster',payload,20000);
+      image=new Image(); image.src=data.image; await image.decode();
+    } catch(apiError) {
+      if(!window.puter?.ai?.txt2img) throw new Error('Puter图片服务未加载');
+      image=await window.puter.ai.txt2img(`为${payload.product}生成9:16酒店营销海报底图。风格：${payload.style}。视觉元素：${payload.elements}。Trip MALL香槟金、暖白、深咖配色，高级酒店商业广告质感，留出清晰中文文案区域，不出现任何文字、Logo或版权角色。`,{model:'gpt-image-1',ratio:'9:16'});
+    }
+    backgroundImage=image; draw();
+  } catch(error){alert(`底图生成失败：${error.message}`);} finally {button.textContent='AI生成底图';}
+};
 $('download').onclick=()=>{selected=null;draw();const anchor=document.createElement('a');anchor.download='TripMALL营销海报.png';anchor.href=canvas.toDataURL('image/png');anchor.click();};
 applyPosterCopy(localPosterCopy());
+
 
 
