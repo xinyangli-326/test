@@ -2,3 +2,6 @@
 
 nav img,footer img{object-fit:contain;background:transparent}header>img{filter:drop-shadow(0 18px 35px rgba(140,104,70,.15))}select{cursor:pointer;position:relative;z-index:2}#posterCopyStatus{font-size:12px;color:#8c6846;line-height:1.5;min-height:18px}
 
+
+.aiActions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.aiActions button{padding:10px 14px}.aiActions span{font-size:12px;color:#8c6846}#aiLogin{background:#c39f77;color:white;border-color:#c39f77}
+

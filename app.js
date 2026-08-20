@@ -25,10 +25,20 @@ function puterText(response) {
   return String(response || '');
 }
 const IS_GITHUB_PAGES = window.location.hostname.endsWith('github.io');
+function timeoutPromise(ms, message) {
+  return new Promise((_, reject) => setTimeout(() => reject(new Error(message)), ms));
+}
 async function ensurePuterAuth() {
   if (!window.puter?.auth || !window.puter?.ai) throw new Error('公共AI组件未加载，请按 Ctrl+F5 刷新页面');
   const signedIn = await Promise.resolve(window.puter.auth.isSignedIn());
-  if (!signedIn) await window.puter.auth.signIn();
+  if (!signedIn) {
+    $('aiStatus').textContent = '公网AI：等待登录授权';
+    await Promise.race([
+      window.puter.auth.signIn(),
+      timeoutPromise(30000, '登录窗口可能被拦截，请允许本站弹出窗口后点击“登录公共AI”')
+    ]);
+  }
+  $('aiStatus').textContent = '公网AI：已连接';
 }
 async function puterChat(prompt, options = {}) {
   if (!window.puter?.ai?.chat) throw new Error('Puter AI 未加载，请刷新页面后重试');
@@ -253,6 +263,7 @@ $('aiBg').onclick=async event=>{
 };
 $('download').onclick=()=>{selected=null;draw();const anchor=document.createElement('a');anchor.download='TripMALL营销海报.png';anchor.href=canvas.toDataURL('image/png');anchor.click();};
 applyPosterCopy(localPosterCopy());
+
 
 
 
