@@ -4,7 +4,7 @@
 
 ## 架构
 
-- GitHub Pages：托管静态前端，对外网址为 `https://xinyang.github.io/`
+- GitHub Pages：托管静态前端，对外网址为 `https://xinyangli-326.github.io/test/`
 - Vercel：托管 `/api/*` Python Serverless API
 - OpenAI API：仅由 Vercel 后端读取，密钥不会暴露在浏览器
 
@@ -24,10 +24,11 @@
 ### API
 
 1. 将同一仓库导入 Vercel。
-2. Project Name 设置为 `xinyang-tripmall-api`。
+2. Project Name 设置为 `test-xinyang`。
 3. 在 Vercel Environment Variables 设置 `OPENAI_API_KEY`。
-4. 部署后确认地址为 `https://xinyang-tripmall-api.vercel.app`，或同步修改 `config.js`。
+4. 部署后确认地址为 `https://test-xinyang.vercel.app`，或同步修改 `config.js`。
 
 ## 安全
 
 不要将 `.env`、API Key 或其他密钥提交到 GitHub。商业 IP 贴纸仅支持上传已授权素材，AI只生成原创通用角色。
+
