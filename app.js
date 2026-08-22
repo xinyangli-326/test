@@ -158,6 +158,7 @@ const LS = {
   profile: 'tripMall.profile',
   materials: 'tripMall.materials',
   posterStyle: 'tripMall.posterStyle',
+  posterMemory: 'tripMall.posterMemory',
   drafts: 'tripMall.drafts',
   needs: 'tripMall.needs'
 };
@@ -174,6 +175,7 @@ function lsSet(key, value) {
 
 let materials = lsGet(LS.materials, []);
 let drafts = lsGet(LS.drafts, []);
+let posterMemory = lsGet(LS.posterMemory, []);
 
 function renderLearnList() {
   $('learnList').innerHTML = materials.length ? materials.map(item => `
@@ -258,7 +260,25 @@ $('learnUrlBtn').onclick = async () => {
     addMaterial({ name: url, type: 'link', content: data.content });
     alert(`已解析链接，共 ${data.content.length} 字，已加入学习素材。`);
   } catch (error) {
-    alert(`解析链接失败：${error.message}\n\n请确认链接可公开访问，或手动复制正文粘贴到“风格样本”。`);
+    try {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const text = await response.text();
+      const cleaned = text
+        .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+        .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+      if (cleaned.length < 50) throw new Error('提取内容过短');
+      addMaterial({ name: url, type: 'link', content: cleaned });
+      alert(`已在浏览器直接解析链接，共 ${cleaned.length} 字，已加入学习素材。`);
+    } catch (fallbackError) {
+      const hint = String(error.message).includes('OPENAI_API_KEY')
+        ? '后端未配置 OPENAI_API_KEY，但链接解析不需要它——请刷新后重试或检查 Vercel 部署。'
+        : '请确认链接可公开访问（公众号等需要登录的链接无法解析），或复制正文粘贴到“风格样本”。';
+      alert(`解析链接失败：${error.message}\n\n${hint}`);
+    }
   }
 };
 
@@ -309,9 +329,12 @@ $('learnReset').onclick = () => {
   localStorage.removeItem(LS.materials);
   localStorage.removeItem(LS.profile);
   localStorage.removeItem(LS.posterStyle);
+  localStorage.removeItem(LS.posterMemory);
   localStorage.removeItem(LS.drafts);
+  posterMemory = [];
   $('profileBox').value = '';
   renderLearnList();
+  renderPosterMemory();
   renderDraftCount();
   alert('已清空学习素材与画像。');
 };
@@ -464,7 +487,7 @@ let dragState = null;
 let watermarkEnabled = $('watermark').checked;
 
 const logoImage = new Image();
-logoImage.src = 'assets/trip-mall-logo-transparent.png?v=zbuild1';
+logoImage.src = 'assets/trip-mall-logo-transparent.png?v=zbuild2';
 
 function addObject(object) {
   snapshot();
@@ -904,142 +927,6 @@ function localPosterCopy() {
   };
 }
 
-const TEMPLATES = [
-  { id: 'center', name: '经典居中', emoji: '✦', layout: 'center', colors: { accent: '#c07c28', ink: '#8c6846', sub: '#5e4a39' } },
-  { id: 'magazine', name: '左对齐杂志', emoji: '❖', layout: 'left', colors: { accent: '#b0682c', ink: '#3f342b', sub: '#6f5c4a' } },
-  { id: 'burst', name: '促销爆炸', emoji: '⚡', layout: 'burst', colors: { accent: '#e04f2f', ink: '#29231e', sub: '#5a4535' } },
-  { id: 'list', name: '知识清单', emoji: '☑', layout: 'list', colors: { accent: '#2e7d6b', ink: '#23463f', sub: '#4c6a62' } },
-  { id: 'festive', name: '节日氛围', emoji: '♡', layout: 'festive', colors: { accent: '#c0392b', ink: '#7a2f25', sub: '#8d5a4a' } },
-  { id: 'minimal', name: '简约留白', emoji: '◇', layout: 'minimal', colors: { accent: '#9a8a77', ink: '#4a423a', sub: '#7a7065' } }
-];
-
-function applyTemplate(template) {
-  snapshot();
-  backgroundImage = null;
-  backgroundInfo = { mode: 'template', id: template.id };
-  objects = [];
-  const copy = localPosterCopy();
-  const c = template.colors;
-  const layout = template.layout;
-  if (layout === 'left') {
-    addText(copy.eyebrow, 140, 190, 34, c.accent, 'Microsoft YaHei', 700);
-    addText(copy.headline, 140, 330, 110, c.ink, 'SimHei', 900);
-    addText(copy.subheadline, 140, 455, 40, c.sub, 'Microsoft YaHei', 700);
-    addText(copy.price, 140, 560, 56, c.accent, 'Microsoft YaHei', 900);
-    copy.features.forEach((text, index) => addText(text, 150, 1400 + index * 70, 40, c.sub, 'Microsoft YaHei', 800));
-    copy.metrics.forEach((item, index) => {
-      addText(item.value, 150 + index * 260, 1620, 56, c.accent, 'Microsoft YaHei', 900);
-      addText(item.label, 150 + index * 260, 1685, 28, c.sub, 'Microsoft YaHei', 600);
-    });
-    addText(copy.cta, 140, 1810, 40, '#ffffff', 'Microsoft YaHei', 800);
-  } else if (layout === 'burst') {
-    addText(copy.eyebrow, 540, 140, 36, c.accent, 'Microsoft YaHei', 700);
-    addText(copy.headline, 540, 420, 150, c.ink, 'SimHei', 900);
-    addText(copy.subheadline, 540, 550, 44, c.sub, 'Microsoft YaHei', 700);
-    addText(copy.price, 540, 720, 84, c.accent, 'SimHei', 900);
-    copy.features.forEach((text, index) => addText(text, 240 + index * 300, 1520, 42, '#ffffff', 'Microsoft YaHei', 900));
-    copy.metrics.forEach((item, index) => {
-      addText(item.value, 225 + index * 315, 1670, 54, c.accent, 'Microsoft YaHei', 900);
-      addText(item.label, 225 + index * 315, 1730, 28, c.sub, 'Microsoft YaHei', 600);
-    });
-    addText(copy.cta, 540, 1840, 42, '#ffffff', 'Microsoft YaHei', 900);
-  } else if (layout === 'list') {
-    addText(copy.eyebrow, 540, 150, 34, c.accent, 'Microsoft YaHei', 700);
-    addText(copy.headline, 540, 300, 96, c.ink, 'SimHei', 900);
-    addText(copy.subheadline, 540, 400, 40, c.sub, 'Microsoft YaHei', 700);
-    copy.features.forEach((text, index) => {
-      addText(`${index + 1}. ${text}`, 540, 900 + index * 120, 54, c.sub, 'Microsoft YaHei', 800);
-    });
-    addText(copy.price, 540, 1330, 52, c.accent, 'Microsoft YaHei', 900);
-    copy.metrics.forEach((item, index) => {
-      addText(item.value, 225 + index * 315, 1560, 58, c.accent, 'Microsoft YaHei', 900);
-      addText(item.label, 225 + index * 315, 1625, 28, c.sub, 'Microsoft YaHei', 600);
-    });
-    addText(copy.cta, 540, 1820, 40, '#ffffff', 'Microsoft YaHei', 800);
-  } else if (layout === 'festive') {
-    addText(copy.eyebrow, 540, 170, 36, c.accent, 'KaiTi', 700);
-    addText(copy.headline, 540, 380, 120, c.ink, 'SimHei', 900);
-    addText(copy.subheadline, 540, 500, 44, c.sub, 'Microsoft YaHei', 700);
-    addText(copy.price, 540, 650, 60, c.accent, 'KaiTi', 900);
-    copy.features.forEach((text, index) => addText(text, 225 + index * 315, 1460, 42, c.sub, 'Microsoft YaHei', 800));
-    copy.metrics.forEach((item, index) => {
-      addText(item.value, 225 + index * 315, 1600, 56, c.accent, 'KaiTi', 900);
-      addText(item.label, 225 + index * 315, 1665, 28, c.sub, 'Microsoft YaHei', 600);
-    });
-    addText(copy.cta, 540, 1820, 40, '#ffffff', 'Microsoft YaHei', 800);
-  } else if (layout === 'minimal') {
-    addText(copy.eyebrow, 540, 620, 32, c.accent, 'Microsoft YaHei', 600);
-    addText(copy.headline, 540, 800, 100, c.ink, 'Georgia', 600);
-    addText(copy.subheadline, 540, 900, 36, c.sub, 'Microsoft YaHei', 500);
-    addText(copy.price, 540, 1010, 44, c.accent, 'Microsoft YaHei', 700);
-    addText(copy.cta, 540, 1750, 36, c.sub, 'Microsoft YaHei', 600);
-  } else {
-    applyPosterCopy(copy, c);
-  }
-  selected = null;
-  draw();
-  renderLayers();
-  updateHistoryButtons();
-}
-
-function paintTemplatePreview(template, targetCanvas) {
-  const width = targetCanvas.width;
-  const height = targetCanvas.height;
-  const g = targetCanvas.getContext('2d');
-  const gradient = g.createLinearGradient(0, 0, width, height);
-  gradient.addColorStop(0, '#fffdf9');
-  gradient.addColorStop(1, '#dec5aa');
-  g.fillStyle = gradient;
-  g.fillRect(0, 0, width, height);
-  g.textAlign = 'center';
-  g.textBaseline = 'middle';
-  const c = template.colors;
-  g.font = '700 10px Microsoft YaHei';
-  g.fillStyle = c.accent;
-  g.fillText('TRIP MALL', width / 2, height * 0.09);
-  g.font = '900 28px SimHei';
-  g.fillStyle = c.ink;
-  g.fillText('宠物友好房', width / 2, height * 0.24);
-  g.font = '700 12px Microsoft YaHei';
-  g.fillStyle = c.sub;
-  g.fillText('一站式打造差异化卖点', width / 2, height * 0.34);
-  g.font = '900 16px Microsoft YaHei';
-  g.fillStyle = c.accent;
-  g.fillText('轻量升级 · 快速上线', width / 2, height * 0.45);
-  ['方案设计', '物资配置', '营销赋能'].forEach((text, index) => {
-    g.font = '700 11px Microsoft YaHei';
-    g.fillStyle = c.sub;
-    g.fillText(text, width * (0.25 + index * 0.25), height * 0.72);
-  });
-  g.font = '900 15px Microsoft YaHei';
-  g.fillStyle = c.accent;
-  g.fillText('省心 · 高效 · 专业', width / 2, height * 0.86);
-  g.font = '700 11px Microsoft YaHei';
-  g.fillStyle = '#ffffff';
-  g.fillText('登录服务市场了解详情', width / 2, height * 0.95);
-}
-
-function renderTplRow() {
-  const row = $('tplRow');
-  row.innerHTML = '';
-  TEMPLATES.forEach(template => {
-    const card = document.createElement('button');
-    card.type = 'button';
-    card.className = 'tpl-card';
-    card.title = `${template.emoji} ${template.name}`;
-    const mini = document.createElement('canvas');
-    mini.width = 135;
-    mini.height = 240;
-    paintTemplatePreview(template, mini);
-    card.appendChild(mini);
-    card.appendChild(document.createElement('span')).textContent = template.name;
-    card.onclick = () => applyTemplate(template);
-    row.appendChild(card);
-  });
-}
-renderTplRow();
-$('tplPrev').onclick = () => $('tplRow').scrollBy({ left: -420, behavior: 'smooth' });
-$('tplNext').onclick = () => $('tplRow').scrollBy({ left: 420, behavior: 'smooth' });
 
 function applyPosterCopy(copy, colors = { accent: '#c07c28', ink: '#8c6846', sub: '#5e4a39' }) {
   snapshot();
@@ -1101,7 +988,6 @@ $('bgMode').querySelectorAll('button').forEach(button => {
     button.classList.add('on');
     $('bgAi').hidden = button.dataset.mode !== 'ai';
     $('bgUpload').hidden = button.dataset.mode !== 'upload';
-    $('bgTemplate').hidden = button.dataset.mode !== 'template';
   };
 });
 
@@ -1110,6 +996,7 @@ $('aiBg').onclick = async event => {
   const payload = {
     product: $('product').value,
     style: $('posterStyle').value,
+    scene: $('bgScene').value,
     description: $('bgDesc').value,
     elements: $('stickerPrompt').value
   };
@@ -1125,15 +1012,18 @@ $('aiBg').onclick = async event => {
       await image.decode();
     } catch (apiError) {
       if (!window.puter?.ai?.txt2img) throw new Error('Puter图片服务未加载');
-      const desc = payload.description ? `。用户补充描述：${payload.description}` : '';
+      const sceneText = payload.scene ? `场景：${payload.scene}。` : '';
+      const desc = payload.description
+        ? `画面主体必须精确为：${payload.description}。`
+        : '';
       image = await window.puter.ai.txt2img(
-        `为${payload.product}生成9:16酒店营销海报底图。风格：${payload.style}。视觉元素：${payload.elements}${desc}。Trip MALL香槟金、暖白、深咖配色，高级酒店商业广告质感，留出清晰中文文案区域，不出现任何文字、Logo或版权角色。`,
+        `为${payload.product}生成9:16酒店营销海报底图，要求真实商业摄影质感（写实照片，不是插画、不是抽象画）。风格：${payload.style}。${sceneText}${desc}视觉元素：${payload.elements}。构图：主体清晰、居中偏下，上方和中央留出干净空白用于标题文字，柔和真实光线，高端酒店广告质感，香槟金#C39F77、暖白、深咖品牌配色。严禁出现：任何文字、字母、数字、水印、Logo、人脸、手部、畸形肢体、奇怪生物、抽象漂浮物、拼贴、漫画风。画面克制、真实、高级。`,
         { model: 'gpt-image-1', ratio: '9:16' }
       );
     }
     snapshot();
     backgroundImage = image;
-    backgroundInfo = { mode: 'ai', style: payload.style, description: payload.description };
+    backgroundInfo = { mode: 'ai', style: payload.style, scene: payload.scene, description: payload.description };
     draw();
   } catch (error) {
     alert(`底图生成失败：${error.message}`);
@@ -1163,6 +1053,48 @@ $('removeBg').onclick = () => {
   backgroundInfo = null;
   draw();
 };
+
+/* 海报记忆学习：投喂的参考海报长期保存，越投喂生成越接近 */
+
+function renderPosterMemory() {
+  $('posterMemoryCount').textContent = posterMemory.length;
+  $('posterMemoryList').innerHTML = posterMemory.length ? posterMemory.map(item => `
+    <div class="memory-item" title="${escapeHtml(item.name)}">
+      <img src="${item.thumb}" alt="参考海报">
+      <span class="nm">${escapeHtml(item.style?.style_name || item.name)}</span>
+      <button class="del" data-del="${item.id}" title="删除这张记忆">×</button>
+    </div>`).join('') : '<p class="empty">还没有投喂海报，上传参考海报后自动加入记忆库，投喂越多效果越好。</p>';
+  $('posterMemoryList').querySelectorAll('.del').forEach(button => {
+    button.onclick = () => {
+      posterMemory = posterMemory.filter(item => item.id !== +button.dataset.del);
+      lsSet(LS.posterMemory, posterMemory);
+      renderPosterMemory();
+    };
+  });
+}
+
+function aggregatePosterStyle() {
+  const styles = posterMemory.map(item => item.style).filter(Boolean);
+  if (!styles.length) return null;
+  const colors = [...new Set(styles.flatMap(s => s.colors || []))].filter(Boolean);
+  const elements = [...new Set(styles.flatMap(s => s.key_elements || []))].slice(0, 6);
+  const bgPrompts = styles.map(s => s.bg_prompt).filter(Boolean).join('; ').slice(0, 1500);
+  return {
+    style_name: `综合 ${styles.length} 张参考海报风格`,
+    colors: colors.slice(0, 3),
+    layout: styles.map(s => s.layout).filter(Boolean).join('；').slice(0, 300),
+    key_elements: elements,
+    bg_prompt: bgPrompts
+  };
+}
+
+$('clearPosterMemory').onclick = () => {
+  if (!confirm('确认清空海报学习记忆库？')) return;
+  posterMemory = [];
+  lsSet(LS.posterMemory, posterMemory);
+  renderPosterMemory();
+};
+renderPosterMemory();
 
 /* ============================ 贴纸生成（多风格） ============================ */
 
@@ -1298,37 +1230,57 @@ $('learnPoster').onclick = async event => {
         $('posterLearnStatus').textContent = 'AI视觉暂不可用，已用本地颜色分析兜底，可手动补充描述。';
       }
     }
+    const thumb = await resizeImageFile(file, 180);
+    posterMemory.unshift({
+      id: Date.now(),
+      name: file.name,
+      date: Date.now(),
+      thumb: thumb.dataUrl,
+      style
+    });
+    if (posterMemory.length > 12) posterMemory = posterMemory.slice(0, 12);
+    lsSet(LS.posterMemory, posterMemory);
+    renderPosterMemory();
     lsSet(LS.posterStyle, style);
-    $('posterLearnStatus').textContent = `已学习风格：${style.style_name}，正在生成同款底图…`;
+
+    const memoryStyle = aggregatePosterStyle() || style;
+    const learnedCount = posterMemory.length;
+    $('posterLearnStatus').textContent = `已学习第 ${learnedCount} 张参考海报（${memoryStyle.style_name}），正在生成相似底图…`;
     let bgImage;
     try {
       if (IS_GITHUB_PAGES) throw new Error('use puter');
       const data = await apiRequest('/api/poster', {
         product: $('product').value,
-        style: style.style_name || $('posterStyle').value,
-        description: style.bg_prompt,
-        elements: (style.key_elements || []).join('，')
+        style: memoryStyle.style_name || $('posterStyle').value,
+        scene: '',
+        description: `综合 ${learnedCount} 张参考海报风格：${memoryStyle.bg_prompt || memoryStyle.layout || ''}`,
+        elements: (memoryStyle.key_elements || []).join('，')
       }, 30000);
       bgImage = new Image();
       bgImage.src = data.image;
       await bgImage.decode();
     } catch (apiError) {
       if (!window.puter?.ai?.txt2img) throw new Error('Puter图片服务未加载');
+      const colorsText = (memoryStyle.colors || []).join('、') || '香槟金、暖白、深咖';
+      const layoutText = memoryStyle.layout || '';
+      const promptBase = memoryStyle.bg_prompt || '';
       bgImage = await window.puter.ai.txt2img(
-        `${style.bg_prompt}。产品主题：${$('product').value}。Trip MALL香槟金、暖白、深咖配色，高级酒店商业广告质感，无文字无Logo。`,
+        `综合 ${learnedCount} 张参考海报的风格，为"${$('product').value}"生成9:16酒店营销海报底图。
+参考风格要点：风格名【${memoryStyle.style_name}】；主色【${colorsText}】；构图【${layoutText}】；视觉元素【${(memoryStyle.key_elements || []).join('、')}】；风格描述【${String(promptBase).slice(0, 900)}】。
+要求：真实商业摄影/插画质感，主体清晰、居中偏下，上方留出干净空白放标题文字，柔和真实光线，高端酒店广告质感。严禁出现：文字、字母、数字、水印、Logo、人脸、手部、畸形肢体、奇怪生物、抽象漂浮物、拼贴、漫画风。画面克制、真实、高级。`,
         { model: 'gpt-image-1', ratio: '9:16' }
       );
     }
     snapshot();
     backgroundImage = bgImage;
-    backgroundInfo = { mode: 'learn', style: style.style_name };
+    backgroundInfo = { mode: 'learn', style: memoryStyle.style_name };
     const colors = {
-      accent: style.colors?.[0] || '#c07c28',
-      ink: style.colors?.[1] || '#8c6846',
-      sub: style.colors?.[2] || '#5e4a39'
+      accent: memoryStyle.colors?.[0] || '#c07c28',
+      ink: memoryStyle.colors?.[1] || '#8c6846',
+      sub: memoryStyle.colors?.[2] || '#5e4a39'
     };
     applyPosterCopy(localPosterCopy(), colors);
-    $('posterLearnStatus').textContent = `完成！已按「${style.style_name}」风格生成底图并排版，可继续拖动修改。`;
+    $('posterLearnStatus').textContent = `完成！已综合 ${learnedCount} 张参考海报生成底图并排版，可继续拖动修改。投喂越多越接近你的风格。`;
   } catch (error) {
     $('posterLearnStatus').textContent = `海报学习失败：${error.message}`;
   } finally {
