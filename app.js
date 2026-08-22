@@ -998,9 +998,10 @@ $('aiBg').onclick = async event => {
     style: $('posterStyle').value,
     scene: $('bgScene').value,
     description: $('bgDesc').value,
-    elements: $('stickerPrompt').value
+    elements: $('bgElements').value
   };
   button.textContent = '生成底图中…';
+  $('bgEngineStatus').textContent = '';
   try {
     if (IS_GITHUB_PAGES) await ensurePuterAuth();
     let image;
@@ -1010,16 +1011,24 @@ $('aiBg').onclick = async event => {
       image = new Image();
       image.src = data.image;
       await image.decode();
+      $('bgEngineStatus').textContent = '引擎：OpenAI gpt-image-2（Vercel API）';
     } catch (apiError) {
       if (!window.puter?.ai?.txt2img) throw new Error('Puter图片服务未加载');
       const sceneText = payload.scene ? `场景：${payload.scene}。` : '';
       const desc = payload.description
         ? `画面主体必须精确为：${payload.description}。`
         : '';
+      const puterModel = await pickPuterImageModel();
       image = await window.puter.ai.txt2img(
-        `为${payload.product}生成9:16酒店营销海报底图，要求真实商业摄影质感（写实照片，不是插画、不是抽象画）。风格：${payload.style}。${sceneText}${desc}视觉元素：${payload.elements}。构图：主体清晰、居中偏下，上方和中央留出干净空白用于标题文字，柔和真实光线，高端酒店广告质感，香槟金#C39F77、暖白、深咖品牌配色。严禁出现：任何文字、字母、数字、水印、Logo、人脸、手部、畸形肢体、奇怪生物、抽象漂浮物、拼贴、漫画风。画面克制、真实、高级。`,
-        { model: 'gpt-image-1', ratio: '9:16' }
+        `Create a vertical 9:16 hotel marketing poster background for "${payload.product}".
+Must be professional real-life commercial photography, not illustration, not abstract art.
+Style: ${payload.style}. ${sceneText}${desc}
+Optional supporting motifs: ${payload.elements || 'none'}.
+Composition: one clear realistic subject related to the theme, generous clean empty space in the center and upper area for headline text, soft realistic lighting, high dynamic range, premium champagne gold / warm ivory / dark coffee brand palette.
+Strictly forbidden: any text, letters, numbers, watermark, logo, people's faces, hands, deformed bodies, strange creatures, floating abstract shapes, collage, comic or cartoon style. Keep it calm, realistic and premium.`,
+        { model: puterModel, ratio: '9:16' }
       );
+      $('bgEngineStatus').textContent = `引擎：Puter 公共AI（${puterModel}）— 后端API不可用时自动降级`;
     }
     snapshot();
     backgroundImage = image;
@@ -1027,6 +1036,7 @@ $('aiBg').onclick = async event => {
     draw();
   } catch (error) {
     alert(`底图生成失败：${error.message}`);
+    $('bgEngineStatus').textContent = '';
   } finally {
     button.textContent = 'AI生成底图';
   }
@@ -1098,6 +1108,17 @@ renderPosterMemory();
 
 /* ============================ 贴纸生成（多风格） ============================ */
 
+async function pickPuterImageModel() {
+  try {
+    const models = await window.puter.ai.listModels?.();
+    if (Array.isArray(models) && models.length) {
+      const imageModels = models.filter(m => /gpt-image|dall-e|flux|sd3|image/i.test(String(m)));
+      if (imageModels.length) return String(imageModels[0]);
+    }
+  } catch {}
+  return 'gpt-image-1';
+}
+
 const STICKER_STYLE_DESC = {
   '卡通萌趣': 'cute cartoon style, big expressive eyes, bold clean outline, playful',
   '写实风': 'photorealistic style, natural lighting, soft shadows, detailed texture',
@@ -1131,7 +1152,7 @@ $('addSticker').onclick = async event => {
       const styleDesc = STICKER_STYLE_DESC[style] || STICKER_STYLE_DESC['卡通萌趣'];
       image = await window.puter.ai.txt2img(
         `原创贴纸，${style}：${subject}。${styleDesc}。透明背景，完整角色，粗线条轮廓，商业贴纸质感，无文字，无Logo，不模仿任何版权角色。`,
-        { model: 'gpt-image-1', ratio: '1:1', transparent_background: true }
+        { model: await pickPuterImageModel(), ratio: '1:1', transparent_background: true }
       );
     }
     addObject({
@@ -1247,6 +1268,7 @@ $('learnPoster').onclick = async event => {
     const learnedCount = posterMemory.length;
     $('posterLearnStatus').textContent = `已学习第 ${learnedCount} 张参考海报（${memoryStyle.style_name}），正在生成相似底图…`;
     let bgImage;
+    let bgEngine = 'OpenAI gpt-image-2（Vercel API）';
     try {
       if (IS_GITHUB_PAGES) throw new Error('use puter');
       const data = await apiRequest('/api/poster', {
@@ -1264,12 +1286,14 @@ $('learnPoster').onclick = async event => {
       const colorsText = (memoryStyle.colors || []).join('、') || '香槟金、暖白、深咖';
       const layoutText = memoryStyle.layout || '';
       const promptBase = memoryStyle.bg_prompt || '';
+      const puterModel = await pickPuterImageModel();
       bgImage = await window.puter.ai.txt2img(
         `综合 ${learnedCount} 张参考海报的风格，为"${$('product').value}"生成9:16酒店营销海报底图。
 参考风格要点：风格名【${memoryStyle.style_name}】；主色【${colorsText}】；构图【${layoutText}】；视觉元素【${(memoryStyle.key_elements || []).join('、')}】；风格描述【${String(promptBase).slice(0, 900)}】。
 要求：真实商业摄影/插画质感，主体清晰、居中偏下，上方留出干净空白放标题文字，柔和真实光线，高端酒店广告质感。严禁出现：文字、字母、数字、水印、Logo、人脸、手部、畸形肢体、奇怪生物、抽象漂浮物、拼贴、漫画风。画面克制、真实、高级。`,
-        { model: 'gpt-image-1', ratio: '9:16' }
+        { model: puterModel, ratio: '9:16' }
       );
+      bgEngine = `Puter 公共AI（${puterModel}）`;
     }
     snapshot();
     backgroundImage = bgImage;
@@ -1280,7 +1304,7 @@ $('learnPoster').onclick = async event => {
       sub: memoryStyle.colors?.[2] || '#5e4a39'
     };
     applyPosterCopy(localPosterCopy(), colors);
-    $('posterLearnStatus').textContent = `完成！已综合 ${learnedCount} 张参考海报生成底图并排版，可继续拖动修改。投喂越多越接近你的风格。`;
+    $('posterLearnStatus').textContent = `完成！已综合 ${learnedCount} 张参考海报生成底图并排版（引擎：${bgEngine}）。投喂越多越接近你的风格。`;
   } catch (error) {
     $('posterLearnStatus').textContent = `海报学习失败：${error.message}`;
   } finally {
