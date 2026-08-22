@@ -4,11 +4,11 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Trip MALL 营销知识库</title>
-<link rel="stylesheet" href="styles.css?v=zbuild1">
+<link rel="stylesheet" href="styles.css?v=zbuild2">
 </head>
 <body>
 <nav id="nav">
-  <img src="assets/trip-mall-logo-transparent.png?v=zbuild1" alt="Trip MALL">
+  <img src="assets/trip-mall-logo-transparent.png?v=zbuild2" alt="Trip MALL">
   <div>
     <a href="#kb">知识库</a>
     <a href="#create">内容生成</a>
@@ -24,7 +24,7 @@
     <span>把产品、平台、支付、活动与运营干货，转化成酒店人愿意看、愿意信、愿意行动的内容。</span>
     <a href="#create">开始创作</a>
   </div>
-  <img class="hero-img" src="assets/trip-mall-logo-transparent.png?v=zbuild1" alt="">
+  <img class="hero-img" src="assets/trip-mall-logo-transparent.png?v=zbuild2" alt="">
 </header>
 
 <div class="ticker" aria-hidden="true"><div class="ticker-track" id="tickerTrack"></div></div>
@@ -115,119 +115,139 @@
   <section id="poster" class="panel reveal">
     <div class="head">
       <div><small>FREE POSTER EDITOR</small><h2>自由海报与贴纸编辑器</h2></div>
-      <span>无限贴纸 · 拖动 · 缩放 · 旋转 · 素材一键删除</span>
+      <span>底图 · 文案 · 贴纸 · 一键删除 · 水印</span>
     </div>
     <div class="editor">
       <aside>
-        <label>底图方式</label>
-        <div class="seg" id="bgMode">
-          <button type="button" data-mode="ai" class="on">AI生成</button>
-          <button type="button" data-mode="upload">上传底图</button>
-          <button type="button" data-mode="template">模板库</button>
-        </div>
-        <div id="bgAi" class="bg-box">
-          <label>底图风格</label>
-          <select id="posterStyle">
-            <option>香槟金轻奢</option>
-            <option>橙黑促销</option>
-            <option>卡通萌趣</option>
-            <option>数据案例</option>
-            <option>清新简约</option>
-            <option>国潮中式</option>
-            <option>自然旅居</option>
+        <details class="group" open>
+          <summary>① 底图与海报学习</summary>
+          <div class="seg" id="bgMode">
+            <button type="button" data-mode="ai" class="on">AI生成底图</button>
+            <button type="button" data-mode="upload">上传底图</button>
+          </div>
+          <div id="bgAi" class="bg-box">
+            <label>底图风格</label>
+            <select id="posterStyle">
+              <option>香槟金轻奢</option>
+              <option>橙黑促销</option>
+              <option>卡通萌趣</option>
+              <option>数据案例</option>
+              <option>清新简约</option>
+              <option>国潮中式</option>
+              <option>自然旅居</option>
+            </select>
+            <label>画面场景</label>
+            <select id="bgScene">
+              <option value="">跟随我的描述</option>
+              <option>大堂</option>
+              <option>客房</option>
+              <option>亲子</option>
+              <option>宠物</option>
+              <option>餐厅</option>
+              <option>露台泳池</option>
+              <option>城市夜景</option>
+              <option>简约渐变</option>
+            </select>
+            <label>画面描述（写具体的，生成会更靠谱）</label>
+            <textarea id="bgDesc" rows="2" placeholder="如：暖金色灯光的大堂、沙发上的宠物窝、落地窗外的城市夜景…"></textarea>
+            <button id="aiBg" type="button">AI生成底图</button>
+          </div>
+          <div id="bgUpload" class="bg-box" hidden>
+            <input id="bgFile" type="file" accept="image/*">
+            <div class="row">
+              <button id="useBg" type="button">用作底图</button>
+              <button id="removeBg" type="button">移除底图</button>
+            </div>
+            <div id="bgPreview" class="bg-preview"></div>
+          </div>
+          <div class="learn-box">
+            <label>海报记忆学习：投喂越多参考海报，生成越接近你的风格</label>
+            <div class="memory-head">
+              <span>已学习 <b id="posterMemoryCount">0</b> 张</span>
+              <button id="clearPosterMemory" type="button">清空记忆</button>
+            </div>
+            <div id="posterMemoryList" class="memory-row"></div>
+            <input id="refPoster" type="file" accept="image/*">
+            <button id="learnPoster" type="button">上传海报，AI学习并生成相似海报</button>
+            <div id="posterLearnStatus"></div>
+          </div>
+        </details>
+
+        <details class="group" open>
+          <summary>② 海报文案排版</summary>
+          <label>海报营销目标</label>
+          <select id="posterGoal">
+            <option>产品招商</option>
+            <option>酒店获客</option>
+            <option>活动促销</option>
+            <option>知识科普</option>
+            <option>案例宣传</option>
           </select>
-          <label>底图描述（可选，自己写文字让AI生成）</label>
-          <textarea id="bgDesc" rows="2" placeholder="如：暖金色灯光的大堂、沙发上的宠物窝、落地窗外的城市夜景…"></textarea>
-          <button id="aiBg" type="button">AI生成底图</button>
-        </div>
-        <div id="bgUpload" class="bg-box" hidden>
-          <input id="bgFile" type="file" accept="image/*">
+          <button id="generatePosterCopy" type="button">生成海报文案并自动排版</button>
+          <div id="posterCopyStatus"></div>
+        </details>
+
+        <details class="group">
+          <summary>③ 添加元素（文本 / 贴纸 / 图片）</summary>
+          <label>添加文本</label>
           <div class="row">
-            <button id="useBg" type="button">用作底图</button>
-            <button id="removeBg" type="button">移除底图</button>
+            <input id="newText" value="携程宠物房">
+            <button id="addText" type="button">添加</button>
           </div>
-          <div id="bgPreview" class="bg-preview"></div>
-        </div>
-        <div id="bgTemplate" class="bg-box" hidden>
-          <div class="tpl-wrap">
-            <button id="tplPrev" type="button" aria-label="上一组">‹</button>
-            <div class="tpl-row" id="tplRow"></div>
-            <button id="tplNext" type="button" aria-label="下一组">›</button>
+          <label>贴纸风格</label>
+          <select id="stickerStyle">
+            <option>卡通萌趣</option>
+            <option>写实风</option>
+            <option>简洁风</option>
+            <option>3D立体</option>
+            <option>国潮插画</option>
+            <option>手绘涂鸦</option>
+            <option>扁平极简</option>
+          </select>
+          <label>生成原创贴纸</label>
+          <div class="row">
+            <input id="stickerPrompt" value="卡通橘猫，开心招手">
+            <button id="addSticker" type="button">生成</button>
           </div>
-          <p>滑动或点击模板卡，直接套用版式与文案。</p>
-        </div>
+          <label>上传授权IP/图片</label>
+          <input id="upload" type="file" accept="image/*">
+        </details>
 
-        <div class="block">
-          <label>海报AI学习：上传类似海报，AI学习风格后生成同款</label>
-          <input id="refPoster" type="file" accept="image/*">
-          <button id="learnPoster" type="button">AI学习并生成类似海报</button>
-          <div id="posterLearnStatus"></div>
-        </div>
+        <details class="group">
+          <summary>④ 选中元素设置</summary>
+          <label>字体</label>
+          <select id="font">
+            <option>Microsoft YaHei</option>
+            <option>SimHei</option>
+            <option>SimSun</option>
+            <option>KaiTi</option>
+            <option>Georgia</option>
+          </select>
+          <label>字号 / 缩放</label>
+          <input id="size" type="range" min="20" max="180" value="72">
+          <label>旋转</label>
+          <input id="rotate" type="range" min="-180" max="180" value="0">
+          <label>颜色</label>
+          <input id="color" type="color" value="#8c6846">
+          <div class="row">
+            <button id="front" type="button">置顶</button>
+            <button id="delete" type="button">删除选中</button>
+          </div>
+        </details>
 
-        <label>海报营销目标</label>
-        <select id="posterGoal">
-          <option>产品招商</option>
-          <option>酒店获客</option>
-          <option>活动促销</option>
-          <option>知识科普</option>
-          <option>案例宣传</option>
-        </select>
-        <button id="generatePosterCopy" type="button">生成海报文案并自动排版</button>
-        <div id="posterCopyStatus"></div>
-
-        <div class="row">
-          <button id="undo" type="button">撤销</button>
-          <button id="redo" type="button">重做</button>
-        </div>
-        <div class="row">
-          <button id="saveDraft" type="button">存为草稿</button>
-          <button id="openDrafts" type="button">我的草稿(<span id="draftCount">0</span>)</button>
-        </div>
-
-        <label>添加文本</label>
-        <input id="newText" value="携程宠物房">
-        <button id="addText" type="button">添加文本层</button>
-
-        <label>贴纸风格</label>
-        <select id="stickerStyle">
-          <option>卡通萌趣</option>
-          <option>写实风</option>
-          <option>简洁风</option>
-          <option>3D立体</option>
-          <option>国潮插画</option>
-          <option>手绘涂鸦</option>
-          <option>扁平极简</option>
-        </select>
-        <label>生成原创贴纸</label>
-        <input id="stickerPrompt" value="卡通橘猫，开心招手">
-        <button id="addSticker" type="button">AI生成贴纸</button>
-
-        <label>上传授权IP/图片</label>
-        <input id="upload" type="file" accept="image/*">
-
-        <hr>
-        <b>选中元素设置</b>
-        <label>字体</label>
-        <select id="font">
-          <option>Microsoft YaHei</option>
-          <option>SimHei</option>
-          <option>SimSun</option>
-          <option>KaiTi</option>
-          <option>Georgia</option>
-        </select>
-        <label>字号 / 缩放</label>
-        <input id="size" type="range" min="20" max="180" value="72">
-        <label>旋转</label>
-        <input id="rotate" type="range" min="-180" max="180" value="0">
-        <label>颜色</label>
-        <input id="color" type="color" value="#8c6846">
-        <div class="row">
-          <button id="front" type="button">置顶</button>
-          <button id="delete" type="button">删除选中</button>
-        </div>
-
-        <label class="check"><input id="watermark" type="checkbox" checked> 添加“携程酒店服务市场”水印</label>
-        <button id="download" class="primary">下载海报PNG</button>
+        <details class="group" open>
+          <summary>⑤ 草稿与输出</summary>
+          <div class="row">
+            <button id="undo" type="button">撤销</button>
+            <button id="redo" type="button">重做</button>
+          </div>
+          <div class="row">
+            <button id="saveDraft" type="button">存为草稿</button>
+            <button id="openDrafts" type="button">我的草稿(<span id="draftCount">0</span>)</button>
+          </div>
+          <label class="check"><input id="watermark" type="checkbox" checked> 添加“携程酒店服务市场”水印</label>
+          <button id="download" class="primary">下载海报PNG</button>
+        </details>
         <p>小黄人、蛋仔派对等商业IP请上传已授权透明PNG，系统不会自动仿制。</p>
       </aside>
       <div class="right">
@@ -242,7 +262,7 @@
 </main>
 
 <footer>
-  <img src="assets/trip-mall-logo-transparent.png?v=zbuild1" alt="">
+  <img src="assets/trip-mall-logo-transparent.png?v=zbuild2" alt="">
   <span>携程酒店服务市场营销知识库 · AI fallback powered by Puter</span>
 </footer>
 
@@ -257,8 +277,8 @@
   </div>
 </div>
 
-<script src="vendor/puter.js?v=zbuild1"></script>
-<script src="config.js?v=zbuild1"></script>
-<script src="app.js?v=zbuild1"></script>
+<script src="vendor/puter.js?v=zbuild2"></script>
+<script src="config.js?v=zbuild2"></script>
+<script src="app.js?v=zbuild2"></script>
 </body>
 </html>
