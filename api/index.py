@@ -1,6 +1,5 @@
 """Vercel Serverless 入口：WSGI 应用，路由 /api/* 请求到 app_core"""
 import json
-import os
 from urllib.parse import urlparse
 
 import app_core
@@ -16,8 +15,6 @@ def route(environ):
             length = int(environ.get("CONTENT_LENGTH") or 0)
             raw = environ["wsgi.input"].read(length) if length else b"{}"
             payload = json.loads(raw or b"{}")
-            if not os.getenv("OPENAI_API_KEY"):
-                raise RuntimeError("未设置 OPENAI_API_KEY")
             if path.endswith("/api/generate"):
                 return 200, {"content": app_core.generate(payload)}
             if path.endswith("/api/poster-copy"):
