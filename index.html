@@ -1,8 +1,264 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Trip MALL 营销知识库</title><link rel="stylesheet" href="styles.css?v=aifix2"></head><body><nav><img src="assets/trip-mall-logo-transparent.png?v=aifix2"><div><a href="#kb">知识库</a><a href="#create">内容生成</a><a href="#poster">海报编辑器</a><a target="_blank" href="https://ebooking.ctrip.com/hmall/index">服务市场主页 ↗</a></div></nav><header><div><p>TRIP MALL CONTENT STUDIO</p><h1>携程酒店服务市场<br><em>营销知识与视觉中台</em></h1><span>把产品、平台、支付、活动与运营干货，转化成酒店人愿意看、愿意信、愿意行动的内容。</span><a href="#create">开始创作</a></div><img src="assets/trip-mall-logo-transparent.png?v=aifix2"></header><main><section id="kb"><div class="head"><div><small>KNOWLEDGE ARCHITECTURE</small><h2>五大知识库</h2></div><p>每个大类拥有独立主题、内容类型与目标角色，可持续扩容。</p></div><div id="categories" class="categories"></div></section><section id="create" class="panel"><div class="head"><div><small>CONTENT GENERATOR</small><h2>多视角内容生成</h2></div><div class="aiActions"><button id="aiLogin">登录公共AI</button><button id="research">联网研究</button><span id="aiStatus">公网AI：未连接</span></div></div><div class="formgrid"><div><label>知识库大类</label><select id="category"></select><label>产品 / 主题</label><input id="product" value="宠物友好房"><label>目标视角</label><select id="persona"></select></div><div><label>渠道</label><select id="channel"><option>朋友圈</option><option>小红书</option><option>公众号</option><option>销售话术</option><option>短视频口播</option><option>内部提案</option></select><label>内容类型</label><select id="contentType"></select><label>补充信息</label><textarea id="extra" rows="4"></textarea></div></div><details><summary>文章风格学习与联网研究结果</summary><textarea id="samples" rows="7" placeholder="粘贴公众号文章正文，或点击联网研究后自动填入"></textarea></details><button id="generate" class="primary">生成具体内容 →</button><div id="result"></div></section><section id="poster" class="panel"><div class="head"><div><small>FREE POSTER EDITOR</small><h2>自由海报与贴纸编辑器</h2></div><span>无限贴纸 · 拖动 · 缩放 · 旋转</span></div><div class="editor"><aside><label>底图风格</label><select id="posterStyle"><option>香槟金轻奢</option><option>橙黑促销</option><option>卡通萌趣</option><option>数据案例</option></select><button id="aiBg">AI生成底图</button><label>海报营销目标</label><select id="posterGoal"><option>产品招商</option><option>酒店获客</option><option>活动促销</option><option>知识科普</option><option>案例宣传</option></select><button id="generatePosterCopy">生成海报文案并自动排版</button><div id="posterCopyStatus"></div><label>添加文本</label><input id="newText" value="携程宠物房"><button id="addText">添加文本层</button><label>生成原创贴纸</label><input id="stickerPrompt" value="卡通橘猫，开心招手"><button id="addSticker">AI生成贴纸</button><label>上传授权IP/图片</label><input id="upload" type="file" accept="image/*"><hr><b>选中元素设置</b><label>字体</label><select id="font"><option>Microsoft YaHei</option><option>SimHei</option><option>SimSun</option><option>KaiTi</option><option>Georgia</option></select><label>字号 / 缩放</label><input id="size" type="range" min="20" max="180" value="72"><label>旋转</label><input id="rotate" type="range" min="-180" max="180" value="0"><label>颜色</label><input id="color" type="color" value="#8c6846"><div class="row"><button id="front">置顶</button><button id="delete">删除</button></div><button id="download" class="primary">下载海报PNG</button><p>小黄人、蛋仔派对等商业IP请上传已授权透明PNG，系统不会自动仿制。</p></aside><div class="canvas"><canvas id="c" width="1080" height="1920"></canvas></div></div></section></main><footer><img src="assets/trip-mall-logo-transparent.png?v=aifix2"><span>携程酒店服务市场营销知识库 · AI fallback powered by Puter</span></footer><script src="vendor/puter.js?v=aifix2"></script><script src="config.js?v=aifix2"></script><script src="app.js?v=aifix2"></script></body></html>
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Trip MALL 营销知识库</title>
+<link rel="stylesheet" href="styles.css?v=zbuild1">
+</head>
+<body>
+<nav id="nav">
+  <img src="assets/trip-mall-logo-transparent.png?v=zbuild1" alt="Trip MALL">
+  <div>
+    <a href="#kb">知识库</a>
+    <a href="#create">内容生成</a>
+    <a href="#poster">海报编辑器</a>
+    <a target="_blank" rel="noopener" href="https://ebooking.ctrip.com/hmall/index">服务市场主页 ↗</a>
+  </div>
+</nav>
 
+<header id="hero">
+  <div>
+    <p>TRIP MALL CONTENT STUDIO</p>
+    <h1>携程酒店服务市场<br><em>营销知识与视觉中台</em></h1>
+    <span>把产品、平台、支付、活动与运营干货，转化成酒店人愿意看、愿意信、愿意行动的内容。</span>
+    <a href="#create">开始创作</a>
+  </div>
+  <img class="hero-img" src="assets/trip-mall-logo-transparent.png?v=zbuild1" alt="">
+</header>
 
+<div class="ticker" aria-hidden="true"><div class="ticker-track" id="tickerTrack"></div></div>
 
+<main>
+  <section id="kb" class="reveal">
+    <div class="head">
+      <div><small>KNOWLEDGE ARCHITECTURE</small><h2>五大知识库</h2></div>
+      <p>每个大类拥有独立主题、内容类型与目标角色，可持续扩容。</p>
+    </div>
+    <div id="categories" class="categories"></div>
+  </section>
 
+  <section id="create" class="panel reveal">
+    <div class="head">
+      <div><small>CONTENT GENERATOR</small><h2>多视角内容生成</h2></div>
+      <div class="aiActions">
+        <button id="aiLogin">登录公共AI</button>
+        <button id="research">联网研究</button>
+        <span id="aiStatus">公网AI：未连接</span>
+      </div>
+    </div>
+    <div class="formgrid">
+      <div>
+        <label>知识库大类</label>
+        <select id="category"></select>
+        <label>产品 / 主题</label>
+        <input id="product" value="宠物友好房">
+        <label>目标视角</label>
+        <select id="persona"></select>
+      </div>
+      <div>
+        <label>渠道 / 文章类型</label>
+        <select id="channel">
+          <option>朋友圈</option>
+          <option>社群运营</option>
+          <option>小红书</option>
+          <option>公众号</option>
+          <option>销售话术</option>
+          <option>短视频口播</option>
+          <option>内部提案</option>
+        </select>
+        <label>内容类型</label>
+        <select id="contentType"></select>
+        <label>补充信息</label>
+        <textarea id="extra" rows="3"></textarea>
+      </div>
+    </div>
 
+    <div class="block">
+      <label>生成需求（个性化，可点选快速标签或自行输入）</label>
+      <div class="chips" id="needChips">
+        <button type="button" data-tag="调整已有文案细节">调整已有文案细节</button>
+        <button type="button" data-tag="强调IP">强调IP</button>
+        <button type="button" data-tag="强调功能">强调功能</button>
+        <button type="button" data-tag="强调价格优惠">强调价格优惠</button>
+        <button type="button" data-tag="语气更活泼">语气更活泼</button>
+        <button type="button" data-tag="更正式专业">更正式专业</button>
+        <button type="button" data-tag="内容更简短">内容更简短</button>
+        <button type="button" data-tag="增加数据支撑">增加数据支撑</button>
+      </div>
+      <textarea id="needs" rows="2" placeholder="输入个性化需求，如：基于已有文案调整细节、突出IP、强调功能卖点…"></textarea>
+    </div>
 
+    <details class="learn" open>
+      <summary>文案学习：上传文案 / PPT / 链接，AI提炼风格画像（之后只需简短提示即可生成配套物料）</summary>
+      <div class="learn-tools">
+        <input id="learnFile" type="file" accept=".txt,.md,.docx,.pptx,.pdf,.html">
+        <button id="learnFileBtn" type="button">解析文件</button>
+        <input id="learnUrl" type="url" placeholder="粘贴外部链接，如公众号文章、行业报告">
+        <button id="learnUrlBtn" type="button">解析链接</button>
+      </div>
+      <div id="learnList" class="learn-list"></div>
+      <div class="learn-actions">
+        <button id="learnProfile" class="primary" type="button">AI学习：生成风格画像</button>
+        <button id="learnReset" type="button">清空素材与画像</button>
+      </div>
+      <label>风格画像（AI学习总结，可手动微调）</label>
+      <textarea id="profileBox" rows="4" placeholder="AI将从你的素材中提炼语气、句式、结构、高频表达等画像，生成时会自动遵循…"></textarea>
+      <label>手动粘贴文章风格样本</label>
+      <textarea id="samples" rows="5" placeholder="粘贴公众号文章正文，或点击联网研究后自动填入"></textarea>
+    </details>
 
+    <button id="generate" class="primary">生成具体内容 →</button>
+    <div id="result"></div>
+  </section>
+
+  <section id="poster" class="panel reveal">
+    <div class="head">
+      <div><small>FREE POSTER EDITOR</small><h2>自由海报与贴纸编辑器</h2></div>
+      <span>无限贴纸 · 拖动 · 缩放 · 旋转 · 素材一键删除</span>
+    </div>
+    <div class="editor">
+      <aside>
+        <label>底图方式</label>
+        <div class="seg" id="bgMode">
+          <button type="button" data-mode="ai" class="on">AI生成</button>
+          <button type="button" data-mode="upload">上传底图</button>
+          <button type="button" data-mode="template">模板库</button>
+        </div>
+        <div id="bgAi" class="bg-box">
+          <label>底图风格</label>
+          <select id="posterStyle">
+            <option>香槟金轻奢</option>
+            <option>橙黑促销</option>
+            <option>卡通萌趣</option>
+            <option>数据案例</option>
+            <option>清新简约</option>
+            <option>国潮中式</option>
+            <option>自然旅居</option>
+          </select>
+          <label>底图描述（可选，自己写文字让AI生成）</label>
+          <textarea id="bgDesc" rows="2" placeholder="如：暖金色灯光的大堂、沙发上的宠物窝、落地窗外的城市夜景…"></textarea>
+          <button id="aiBg" type="button">AI生成底图</button>
+        </div>
+        <div id="bgUpload" class="bg-box" hidden>
+          <input id="bgFile" type="file" accept="image/*">
+          <div class="row">
+            <button id="useBg" type="button">用作底图</button>
+            <button id="removeBg" type="button">移除底图</button>
+          </div>
+          <div id="bgPreview" class="bg-preview"></div>
+        </div>
+        <div id="bgTemplate" class="bg-box" hidden>
+          <div class="tpl-wrap">
+            <button id="tplPrev" type="button" aria-label="上一组">‹</button>
+            <div class="tpl-row" id="tplRow"></div>
+            <button id="tplNext" type="button" aria-label="下一组">›</button>
+          </div>
+          <p>滑动或点击模板卡，直接套用版式与文案。</p>
+        </div>
+
+        <div class="block">
+          <label>海报AI学习：上传类似海报，AI学习风格后生成同款</label>
+          <input id="refPoster" type="file" accept="image/*">
+          <button id="learnPoster" type="button">AI学习并生成类似海报</button>
+          <div id="posterLearnStatus"></div>
+        </div>
+
+        <label>海报营销目标</label>
+        <select id="posterGoal">
+          <option>产品招商</option>
+          <option>酒店获客</option>
+          <option>活动促销</option>
+          <option>知识科普</option>
+          <option>案例宣传</option>
+        </select>
+        <button id="generatePosterCopy" type="button">生成海报文案并自动排版</button>
+        <div id="posterCopyStatus"></div>
+
+        <div class="row">
+          <button id="undo" type="button">撤销</button>
+          <button id="redo" type="button">重做</button>
+        </div>
+        <div class="row">
+          <button id="saveDraft" type="button">存为草稿</button>
+          <button id="openDrafts" type="button">我的草稿(<span id="draftCount">0</span>)</button>
+        </div>
+
+        <label>添加文本</label>
+        <input id="newText" value="携程宠物房">
+        <button id="addText" type="button">添加文本层</button>
+
+        <label>贴纸风格</label>
+        <select id="stickerStyle">
+          <option>卡通萌趣</option>
+          <option>写实风</option>
+          <option>简洁风</option>
+          <option>3D立体</option>
+          <option>国潮插画</option>
+          <option>手绘涂鸦</option>
+          <option>扁平极简</option>
+        </select>
+        <label>生成原创贴纸</label>
+        <input id="stickerPrompt" value="卡通橘猫，开心招手">
+        <button id="addSticker" type="button">AI生成贴纸</button>
+
+        <label>上传授权IP/图片</label>
+        <input id="upload" type="file" accept="image/*">
+
+        <hr>
+        <b>选中元素设置</b>
+        <label>字体</label>
+        <select id="font">
+          <option>Microsoft YaHei</option>
+          <option>SimHei</option>
+          <option>SimSun</option>
+          <option>KaiTi</option>
+          <option>Georgia</option>
+        </select>
+        <label>字号 / 缩放</label>
+        <input id="size" type="range" min="20" max="180" value="72">
+        <label>旋转</label>
+        <input id="rotate" type="range" min="-180" max="180" value="0">
+        <label>颜色</label>
+        <input id="color" type="color" value="#8c6846">
+        <div class="row">
+          <button id="front" type="button">置顶</button>
+          <button id="delete" type="button">删除选中</button>
+        </div>
+
+        <label class="check"><input id="watermark" type="checkbox" checked> 添加“携程酒店服务市场”水印</label>
+        <button id="download" class="primary">下载海报PNG</button>
+        <p>小黄人、蛋仔派对等商业IP请上传已授权透明PNG，系统不会自动仿制。</p>
+      </aside>
+      <div class="right">
+        <div class="canvas"><canvas id="c" width="1080" height="1920"></canvas></div>
+        <div class="layers">
+          <b>画布素材（点击 × 直接删除，点击列表可选中）</b>
+          <div id="layerList" class="layer-list"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <img src="assets/trip-mall-logo-transparent.png?v=zbuild1" alt="">
+  <span>携程酒店服务市场营销知识库 · AI fallback powered by Puter</span>
+</footer>
+
+<div id="draftModal" class="modal" hidden>
+  <div class="modal-box">
+    <h3>我的草稿</h3>
+    <div id="draftList" class="draft-list"></div>
+    <div class="row">
+      <button id="clearDrafts" type="button">清空草稿</button>
+      <button id="closeDrafts" class="primary" type="button">关闭</button>
+    </div>
+  </div>
+</div>
+
+<script src="vendor/puter.js?v=zbuild1"></script>
+<script src="config.js?v=zbuild1"></script>
+<script src="app.js?v=zbuild1"></script>
+</body>
+</html>
