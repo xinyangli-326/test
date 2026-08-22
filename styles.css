@@ -1,0 +1,142 @@
+:root{--gold:#c39f77;--brown:#8c6846;--cream:#f8f5f0;--ink:#29231e}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--cream);color:var(--ink);font-family:"Microsoft YaHei",sans-serif}
+
+/* 导航 */
+nav{height:76px;padding:0 5vw;display:flex;align-items:center;justify-content:space-between;background:#fff;position:sticky;top:0;z-index:9;border-bottom:1px solid #eadfd3;transition:box-shadow .3s ease,height .3s ease}
+nav.scrolled{box-shadow:0 12px 32px rgba(83,58,33,.12);height:64px}
+nav img{width:180px}
+nav a{margin-left:25px;color:#5e4a39;text-decoration:none;font-size:13px;transition:color .2s}
+nav a:hover{color:var(--brown)}
+
+/* 首屏 */
+header{min-height:620px;padding:90px 7vw;display:grid;grid-template-columns:1fr .65fr;align-items:center;background:radial-gradient(circle at 80%,#e9d7c4,#f8f5f0 44%);overflow:hidden}
+header p,small{letter-spacing:2px;color:var(--brown);font-weight:bold}
+h1{font:400 clamp(48px,6vw,80px)/1.15 Georgia,"Songti SC";margin:0}
+h1 em{color:var(--gold);font-style:normal}
+header span{display:block;max-width:700px;line-height:1.9;color:#75685c;margin-top:20px}
+header a,.primary{display:inline-block;margin-top:28px;padding:16px 25px;background:var(--brown);color:white;text-decoration:none;border:0;cursor:pointer;transition:background .25s,transform .25s}
+header a:hover,.primary:hover{background:#73512f;transform:translateY(-2px)}
+header>img{width:100%;max-width:440px;filter:drop-shadow(0 18px 35px rgba(140,104,70,.18));transition:transform .2s ease-out}
+
+/* 跑马灯 */
+.ticker{overflow:hidden;background:#fff;border-bottom:1px solid #eadfd3;padding:14px 0}
+.ticker-track{display:flex;gap:36px;white-space:nowrap;width:max-content;animation:ticker 32s linear infinite;font-size:14px;color:#8b7766}
+.ticker-track span::after{content:"·";margin-left:36px;color:var(--gold)}
+@keyframes ticker{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+
+main{width:min(1240px,92vw);margin:auto}
+section{padding:85px 0}
+.head{display:flex;justify-content:space-between;align-items:flex-start}
+.head h2{font:400 45px Georgia,"Songti SC";margin:8px 0}
+.head p{color:#807266}
+
+/* 滚动显现 */
+.reveal{opacity:0;transform:translateY(30px);transition:opacity .75s ease,transform .75s ease}
+.reveal.in{opacity:1;transform:none}
+
+.categories{display:grid;grid-template-columns:repeat(5,1fr);gap:12px}
+.cat{background:white;padding:24px;border-top:4px solid var(--gold);min-height:240px;transition:transform .3s ease,box-shadow .3s ease}
+.cat:hover{transform:translateY(-6px);box-shadow:0 18px 44px rgba(110,80,53,.14)}
+.cat b{font-size:20px}
+.cat p,.cat li{font-size:13px;color:#776b60;line-height:1.7}
+
+.panel{background:white;padding:45px;margin:40px 0;box-shadow:0 20px 60px #6e50351a;border-radius:6px}
+.formgrid,.editor{display:grid;grid-template-columns:1fr 1fr;gap:28px}
+.formgrid>div,aside{display:grid;gap:10px;align-content:start}
+label{font-size:13px;font-weight:bold}
+input,textarea,select,button{padding:13px;border:1px solid #dacdbf;background:white;font:inherit;border-radius:4px}
+button{cursor:pointer;transition:background .2s,opacity .2s}
+button:disabled{opacity:.45;cursor:not-allowed}
+button:hover:not(:disabled){background:#f4ede3}
+details{margin-top:20px}
+details textarea{width:100%;margin-top:10px}
+#result{white-space:pre-wrap;line-height:1.9;margin-top:25px;padding:25px;background:#faf7f2;max-height:850px;overflow:auto;border-radius:6px}
+.editor{grid-template-columns:340px 1fr}
+aside{position:sticky;top:100px;max-height:calc(100vh - 130px);overflow:auto;padding-right:6px}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.canvas{background:#332a23;padding:12px;border-radius:6px}
+.canvas canvas{display:block;width:100%;height:auto;background:#f6efe6;cursor:grab}
+.right{display:grid;gap:14px;align-content:start}
+aside p{font-size:11px;color:#8b7766;line-height:1.6}
+footer{padding:40px 6vw;background:#fff;display:flex;justify-content:space-between;align-items:center;margin-top:30px}
+footer img{width:180px}
+nav img,footer img{object-fit:contain;background:transparent}
+select{cursor:pointer;position:relative;z-index:2}
+#posterCopyStatus,#posterLearnStatus{font-size:12px;color:#8c6846;line-height:1.5;min-height:18px}
+.aiActions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.aiActions button{padding:10px 14px}
+.aiActions span{font-size:12px;color:#8c6846}
+#aiLogin{background:#c39f77;color:white;border-color:#c39f77}
+
+/* 生成需求 */
+.block{margin-top:22px;display:grid;gap:10px}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chips button{padding:8px 14px;font-size:12px;border:1px solid #dacdbf;background:#faf7f2;color:#5e4a39;border-radius:999px}
+.chips button.on{background:var(--brown);color:#fff;border-color:var(--brown)}
+
+/* 文案学习 */
+.learn{background:#faf7f2;border:1px solid #eadfd3;border-radius:8px;padding:16px 18px;margin-top:22px}
+.learn summary{cursor:pointer;font-weight:bold;font-size:14px;color:#5e4a39}
+.learn-tools{display:grid;grid-template-columns:1fr auto 1.2fr auto;gap:10px;margin-top:12px;align-items:center}
+.learn-list{display:grid;gap:6px;margin-top:12px}
+.learn-item{display:grid;grid-template-columns:auto auto 1fr auto;gap:10px;align-items:center;background:#fff;border:1px solid #eadfd3;padding:8px 10px;border-radius:6px;font-size:13px}
+.learn-item .name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.badge{font-size:11px;color:var(--brown);background:#f3e9dc;border-radius:4px;padding:2px 7px}
+.x{border:0;background:transparent;color:#b08d6d;font-size:18px;line-height:1;padding:4px 8px}
+.x:hover{background:#f5e7d8;color:#8c6846}
+.learn-actions{display:flex;gap:10px;margin-top:12px;flex-wrap:wrap}
+.empty{font-size:12px;color:#9a8877;margin:6px 0}
+
+/* 底图切换 */
+.seg{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;background:#f3ece2;padding:5px;border-radius:8px}
+.seg button{border:0;background:transparent;padding:9px 6px;font-size:13px;color:#7a6a59;border-radius:6px}
+.seg button.on{background:#fff;color:var(--brown);font-weight:bold;box-shadow:0 2px 8px rgba(83,58,33,.12)}
+.bg-box{display:grid;gap:10px;padding:12px;background:#faf7f2;border:1px dashed #dacdbf;border-radius:8px}
+.bg-preview img{width:100%;border-radius:6px;display:block}
+.bg-preview{display:grid;gap:6px}
+
+/* 模板画廊 */
+.tpl-wrap{display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:center}
+.tpl-row{display:flex;gap:10px;overflow-x:auto;scroll-snap-type:x mandatory;padding-bottom:6px;scrollbar-width:thin}
+.tpl-card{border:1px solid #eadfd3;background:#fff;border-radius:8px;padding:8px;display:grid;gap:6px;justify-items:center;scroll-snap-align:start;flex:0 0 auto;width:150px}
+.tpl-card:hover{border-color:var(--gold);transform:translateY(-3px)}
+.tpl-card canvas{width:135px;height:240px;border-radius:4px;display:block}
+.tpl-card span{font-size:12px;color:#5e4a39;font-weight:bold}
+.tpl-wrap>button{border:1px solid #dacdbf;background:#fff;width:38px;height:38px;border-radius:50%;font-size:18px;color:var(--brown)}
+
+/* 素材列表 */
+.layers{background:#fff;border:1px solid #eadfd3;border-radius:8px;padding:14px}
+.layer-list{display:grid;gap:6px;margin-top:10px;max-height:260px;overflow:auto}
+.layer-item{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;border:1px solid #eadfd3;padding:8px 10px;border-radius:6px;font-size:13px;cursor:pointer}
+.layer-item.on{border-color:var(--gold);background:#fbf6ee}
+.layer-item .name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* 弹窗 */
+.modal{position:fixed;inset:0;background:rgba(41,35,30,.45);display:grid;place-items:center;z-index:99;padding:20px}
+.modal[hidden]{display:none}
+.modal-box{background:#fff;border-radius:10px;padding:24px;width:min(560px,92vw);max-height:80vh;display:grid;gap:14px}
+.modal-box h3{margin:0;color:var(--ink)}
+.draft-list{display:grid;gap:8px;overflow:auto;max-height:46vh}
+.draft-item{display:grid;grid-template-columns:1fr auto auto auto;gap:10px;align-items:center;border:1px solid #eadfd3;border-radius:6px;padding:10px;font-size:13px}
+.draft-item .name{font-weight:bold;color:#5e4a39}
+.draft-item .time{color:#9a8877;font-size:12px}
+.draft-item button{padding:6px 12px;font-size:12px}
+
+.check{display:flex;align-items:center;gap:8px;font-weight:normal}
+.check input{width:16px;height:16px}
+
+@media(max-width:900px){
+  nav div{display:none}
+  header,.formgrid,.editor{grid-template-columns:1fr}
+  .categories{grid-template-columns:1fr 1fr}
+  .head{flex-direction:column}
+  aside{position:static;max-height:none;overflow:visible}
+  .learn-tools{grid-template-columns:1fr}
+}
+@media(max-width:520px){
+  .categories{grid-template-columns:1fr}
+  .panel{padding:22px}
+  .draft-item{grid-template-columns:1fr auto auto}
+}
