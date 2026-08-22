@@ -35,10 +35,38 @@ STICKER_STYLES = {
     "扁平极简": "flat vector style, solid colors, geometric, modern",
 }
 
+POSTER_STYLES = {
+    "香槟金轻奢": "champagne gold and warm ivory luxury style, soft metallic accents, elegant, high-end hotel brand",
+    "橙黑促销": "vibrant orange and deep charcoal promotional style, bold dynamic energy, modern retail campaign",
+    "卡通萌趣": "cute playful flat illustration style, rounded friendly shapes, warm pastel colors",
+    "数据案例": "clean professional data-driven style, subtle infographic motifs, refined business look",
+    "清新简约": "fresh minimal style, soft tones, generous clean white space, airy and calm",
+    "国潮中式": "Chinese heritage style, elegant ink-wash accents and auspicious motifs, refined and premium",
+    "自然旅居": "natural resort style, greenery and wood textures, relaxed organic atmosphere",
+}
+
+POSTER_SCENES = {
+    "大堂": "luxury hotel lobby with warm marble reception desk and soft chandelier light, spacious empty foreground",
+    "客房": "elegant hotel guest room, neatly made bed with crisp linens, floor-to-ceiling window with city view, soft morning light",
+    "亲子": "bright family-friendly hotel room, colorful kids corner with toys and safe cozy atmosphere",
+    "宠物": "cozy pet-friendly hotel room, plush pet bed and feeding bowls on soft carpet, warm welcoming light",
+    "餐厅": "stylish hotel restaurant with set table, coffee and breakfast, natural daylight",
+    "露台泳池": "hotel terrace with pool and lounge chairs at golden hour, relaxed vacation mood",
+    "城市夜景": "hotel room window at night with glittering city skyline, cozy warm interior light",
+    "简约渐变": "refined minimal gradient background in brand colors, calm luxury atmosphere, no objects",
+}
+
+
+def require_key():
+    key = os.getenv("OPENAI_API_KEY")
+    if not key:
+        raise RuntimeError("未设置 OPENAI_API_KEY，请先在 Vercel 环境变量中配置")
+    return key
+
 
 def get_client():
     from openai import OpenAI
-    return OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    return OpenAI(api_key=require_key())
 
 
 def strip_fence(text):
@@ -159,7 +187,7 @@ def image(prompt, size="1024x1024", transparent=False):
         model=os.getenv("OPENAI_IMAGE_MODEL", "gpt-image-2"),
         prompt=prompt,
         size=size,
-        quality="medium",
+        quality=os.getenv("OPENAI_IMAGE_QUALITY", "high"),
         background="transparent" if transparent else "opaque",
     )
     return r.data[0].b64_json
@@ -169,25 +197,38 @@ def sticker(subject, style="卡通萌趣"):
     if any(name in subject for name in BANNED_IP):
         raise ValueError("商业IP贴纸请上传已获得授权的透明PNG素材；AI贴纸仅生成原创或通用角色。")
     style_desc = STICKER_STYLES.get(style, STICKER_STYLES["卡通萌趣"])
-    prompt = f"""Create one original sticker in {style_desc} style: {subject}.
-Transparent background, bold clean outline, full body, expressive pose,
-polished commercial sticker art, no text, no logo,
-no copyrighted character imitation."""
+    prompt = f"""Create ONE single original sticker in {style_desc} style: {subject}.
+The subject must be the only object, centered, full body, clear silhouette,
+thick clean outline, expressive but tasteful pose, polished commercial sticker
+cutout quality, soft natural lighting. Transparent background, no background
+texture, no extra elements. No text, no letters, no logo, no watermark,
+no deformed anatomy, no extra hands, no copyrighted character imitation."""
     return image(prompt, "1024x1024", transparent=True)
 
 
 def poster(p):
     product = p.get("product", "酒店服务市场")
     style = p.get("style", "香槟金轻奢")
-    desc = p.get("description") or ""
-    elements = p.get("elements", "")
-    prompt = f"""Vertical 9:16 hotel marketing background for {product}.
-Style: {style}. Additional description from user: {desc}.
-Motifs: {elements}. Brand palette champagne gold #C39F77,
-warm ivory, dark coffee. No text, no logos, clean zones for copy,
-premium Trip MALL hotel service marketplace feeling,
-high-end commercial photography / illustration quality.
-No copyrighted characters."""
+    scene = p.get("scene", "")
+    desc = (p.get("description") or "").strip()
+    elements = (p.get("elements") or "").strip()
+    style_desc = POSTER_STYLES.get(style, POSTER_STYLES["香槟金轻奢"])
+    scene_desc = POSTER_SCENES.get(scene, "") if scene else ""
+    user_part = f" The main subject MUST be exactly: {desc}." if desc else ""
+    motif_part = f" Include subtle supporting motifs related to: {elements}." if elements else ""
+    scene_part = f" Scene: {scene_desc}." if scene_desc else " Scene: elegant premium hotel environment."
+    prompt = (
+        "Create a vertical 9:16 hotel marketing poster background as professional "
+        "real-life commercial photography, not illustration, not abstract art.\n"
+        f"Style: {style_desc}.\n{scene_part}{user_part}{motif_part}\n"
+        "Composition: one clear realistic subject, generous clean empty space in the "
+        "center and lower third for headline text, soft realistic lighting, high "
+        "dynamic range, sharp focus, premium Trip MALL brand palette (champagne gold "
+        "#C39F77, warm ivory, dark coffee).\n"
+        "MUST NOT contain: any text, letters, numbers, watermark, logo, people's faces, "
+        "hands, deformed bodies, strange creatures, abstract floating shapes, collage, "
+        "comic or cartoon style, overcrowded scenes. Keep it calm, realistic and premium."
+    )
     return image(prompt, "1024x1536", transparent=False)
 
 
@@ -225,7 +266,7 @@ def poster_learn(p):
     return json.loads(strip_fence(r.choices[0].message.content))
 
 
-def _safe_fetch(url, timeout=15):
+def _safe_fetch(url, timeout=20):
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https"):
         raise ValueError("仅支持 http/https 链接")
@@ -236,16 +277,46 @@ def _safe_fetch(url, timeout=15):
         addr = None
     if addr is not None and (addr.is_private or addr.is_loopback or addr.is_link_local):
         raise ValueError("不允许访问内网地址")
-    req = Request(url, headers={"User-Agent": "Mozilla/5.0 (TripMALL Content Studio)"})
-    with urlopen(req, timeout=timeout) as resp:
-        raw = resp.read(2_000_000)
-        ctype = resp.headers.get("Content-Type", "")
-    return raw, ctype
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+        ),
+        "Accept": (
+            "text/html,application/xhtml+xml,application/xml;q=0.9,"
+            "text/plain;q=0.8,*/*;q=0.5"
+        ),
+        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+    }
+    try:
+        import requests
+        resp = requests.get(url, headers=headers, timeout=timeout, allow_redirects=True)
+        resp.raise_for_status()
+        return resp.content[:2_000_000], resp.headers.get("Content-Type", "")
+    except ImportError:
+        req = Request(url, headers=headers)
+        with urlopen(req, timeout=timeout) as resp:
+            raw = resp.read(2_000_000)
+            ctype = resp.headers.get("Content-Type", "")
+            if resp.headers.get("Content-Encoding", "").lower() == "gzip":
+                import gzip
+                raw = gzip.decompress(raw)
+            return raw, ctype
+
+
+def _decode_text(raw):
+    for encoding in ("utf-8", "gb18030", "big5"):
+        try:
+            return raw.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+    return raw.decode("utf-8", errors="ignore")
 
 
 def _html_to_text(raw):
-    text = raw.decode("utf-8", errors="ignore")
+    text = _decode_text(raw)
     text = re.sub(r"<(script|style)[^>]*>.*?</\1>", " ", text, flags=re.S | re.I)
+    text = re.sub(r"<!--.*?-->", " ", text, flags=re.S)
     text = re.sub(r"<br\s*/?>", "\n", text, flags=re.I)
     text = re.sub(r"</(p|div|li|h[1-6]|tr)>", "\n", text, flags=re.I)
     text = re.sub(r"<[^>]+>", " ", text)
@@ -291,12 +362,17 @@ def extract(p):
     url = p.get("url") or ""
     if url:
         raw, ctype = _safe_fetch(url)
-        if "pdf" in ctype:
+        lower = ctype.lower()
+        if "pdf" in lower:
             content = _office_text("upload.pdf", raw)
-        elif "html" in ctype or ctype.startswith("text/"):
+        elif "html" in lower or lower.startswith("text/") or b"<" in raw[:500]:
             content = _html_to_text(raw)
+        elif "json" in lower:
+            content = _decode_text(raw)
         else:
-            content = raw.decode("utf-8", errors="ignore")
+            content = _html_to_text(raw)
+        if not content.strip():
+            raise ValueError("网页内容为空，可能需要登录或动态渲染，请复制正文粘贴到风格样本")
         return {"content": content[:30000], "name": url, "type": "url"}
 
     name = p.get("filename", "upload.txt")
@@ -304,10 +380,7 @@ def extract(p):
     stream = io.BytesIO(data)
     ext = Path(name).suffix.lower()
     if ext in (".txt", ".md", ".csv", ".json"):
-        try:
-            content = data.decode("utf-8")
-        except UnicodeDecodeError:
-            content = data.decode("gbk", errors="ignore")
+        content = _decode_text(data)
     elif ext in (".html", ".htm"):
         content = _html_to_text(data)
     elif ext in (".pptx", ".docx", ".pdf"):
