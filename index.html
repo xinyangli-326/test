@@ -150,7 +150,10 @@
             </select>
             <label>画面描述（写具体的，生成会更靠谱）</label>
             <textarea id="bgDesc" rows="2" placeholder="如：暖金色灯光的大堂、沙发上的宠物窝、落地窗外的城市夜景…"></textarea>
+            <label>附加元素（可选，可留空避免模型跑偏）</label>
+            <input id="bgElements" placeholder="如：绿植、行李箱、宠物窝…">
             <button id="aiBg" type="button">AI生成底图</button>
+            <div id="bgEngineStatus"></div>
           </div>
           <div id="bgUpload" class="bg-box" hidden>
             <input id="bgFile" type="file" accept="image/*">
