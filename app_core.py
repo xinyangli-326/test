@@ -267,6 +267,69 @@ def poster_learn(p):
     return json.loads(strip_fence(r.choices[0].message.content))
 
 
+def poster_edit(p):
+    """真正的"图生图"：把参考海报喂给 Gemini 2.5 Flash Image（Nano Banana），
+    生成同样风格的全新海报底图。"""
+    api_key = os.getenv("GOOGLE_API_KEY")
+    if not api_key:
+        raise RuntimeError("未配置 GOOGLE_API_KEY，无法使用AI模仿生成；已自动改用参考图直接作为底图")
+    from google import genai
+    from google.genai import types
+
+    images = p.get("images") or [{
+        "data_b64": p.get("data_b64", ""),
+        "mime": p.get("mime", "image/png"),
+    }]
+    parts = []
+    for image in images[:4]:
+        data_b64 = image.get("data_b64", "")
+        if not data_b64:
+            continue
+        parts.append(types.Part(inline_data=types.Blob(
+            data=base64.b64decode(data_b64),
+            mime_type=image.get("mime", "image/png"),
+        )))
+    if not parts:
+        raise ValueError("缺少参考海报图片")
+
+    product = p.get("product", "酒店服务市场")
+    scene = p.get("scene", "")
+    desc = (p.get("description") or "").strip()
+    reference_count = len(parts)
+    prompt = (
+        f"参考下面{reference_count}张酒店营销海报的视觉风格（配色、构图、光影、设计语言、字体气质），"
+        f"生成一张全新的 9:16 酒店营销海报底图，主题为「{product}」。"
+    )
+    if scene:
+        prompt += f"画面场景：{scene}。"
+    if desc:
+        prompt += f"画面主体必须精确为：{desc}。"
+    prompt += (
+        "要求：整体气质和设计语言要明显接近参考海报，但画面内容必须是全新的；"
+        "去掉所有文字、Logo、水印；主体清晰、居中偏下，上方和中央留出干净空白用于标题文案；"
+        "真实商业摄影质感、柔和真实光线、高端酒店广告感；"
+        "不要出现人脸特写、畸形肢体、奇怪生物、抽象漂浮物、拼贴、漫画风。"
+    )
+
+    client = genai.Client(api_key=api_key)
+    response = client.models.generate_content(
+        model=os.getenv("GOOGLE_IMAGE_MODEL", "gemini-2.5-flash-image"),
+        contents=types.Content(parts=parts + [types.Part(text=prompt)]),
+        config=types.GenerateContentConfig(
+            response_modalities=["TEXT", "IMAGE"],
+            image_config=types.ImageConfig(aspect_ratio="9:16"),
+        ),
+    )
+    for candidate in response.candidates:
+        for part in candidate.content.parts:
+            if part.inline_data and part.inline_data.data:
+                return {
+                    "image": "data:image/png;base64,"
+                    + base64.b64encode(part.inline_data.data).decode(),
+                }
+    raise RuntimeError("AI 未返回图片，请稍后重试")
+
+
 def _safe_fetch(url, timeout=20):
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https"):
