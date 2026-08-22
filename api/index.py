@@ -34,6 +34,8 @@ def route(environ):
                 return 200, {"image": "data:image/png;base64," + result}
             if path.endswith("/api/poster-learn"):
                 return 200, app_core.poster_learn(payload)
+            if path.endswith("/api/poster-edit"):
+                return 200, app_core.poster_edit(payload)
             if path.endswith("/api/extract"):
                 return 200, app_core.extract(payload)
             return 404, {"error": "not found"}
