@@ -1,5 +1,4 @@
 import json
-import os
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -31,8 +30,6 @@ class H(SimpleHTTPRequestHandler):
             length = int(self.headers.get("Content-Length", 0))
             raw = self.rfile.read(length) or b"{}"
             payload = json.loads(raw)
-            if not os.getenv("OPENAI_API_KEY"):
-                raise RuntimeError("未设置 OPENAI_API_KEY")
             path = self.path.split("?")[0]
             if path.endswith("/api/generate"):
                 self.respond(200, {"content": app_core.generate(payload)})
