@@ -65,7 +65,7 @@ footer{padding:40px 6vw;background:#fff;display:flex;justify-content:space-betwe
 footer img{width:180px}
 nav img,footer img{object-fit:contain;background:transparent}
 select{cursor:pointer;position:relative;z-index:2}
-#posterCopyStatus,#posterLearnStatus{font-size:12px;color:#8c6846;line-height:1.5;min-height:18px}
+#posterCopyStatus,#posterLearnStatus,#bgEngineStatus{font-size:12px;color:#8c6846;line-height:1.5;min-height:18px}
 .aiActions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .aiActions button{padding:10px 14px}
 .aiActions span{font-size:12px;color:#8c6846}
