@@ -165,6 +165,12 @@
           </div>
           <div class="learn-box">
             <label>海报记忆学习：投喂越多参考海报，生成越接近你的风格</label>
+            <label>生成方式</label>
+            <select id="learnMode">
+              <option value="ai">AI 模仿生成（参考原图生成相似海报，推荐）</option>
+              <option value="direct">直接用参考图做底图（最保险）</option>
+            </select>
+            <p class="hint">AI 模仿生成需要 Google AI Key（Nano Banana 同款模型），未配置时自动改用参考图直接做底图。</p>
             <div class="memory-head">
               <span>已学习 <b id="posterMemoryCount">0</b> 张</span>
               <button id="clearPosterMemory" type="button">清空记忆</button>
