@@ -111,6 +111,7 @@ select{cursor:pointer;position:relative;z-index:2}
 .memory-item .nm{position:absolute;left:0;right:0;bottom:0;font-size:10px;color:#fff;background:rgba(41,35,30,.65);padding:3px 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .memory-item .del{position:absolute;top:2px;right:2px;width:20px;height:20px;line-height:18px;text-align:center;font-size:13px;color:#fff;background:rgba(41,35,30,.55);border:0;border-radius:50%;padding:0}
 .memory-item .del:hover{background:#a54832}
+.hint{font-size:11px;color:#a08a72;line-height:1.6;margin:0}
 
 /* 素材列表 */
 .layers{background:#fff;border:1px solid #eadfd3;border-radius:8px;padding:14px}
