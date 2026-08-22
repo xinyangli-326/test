@@ -220,6 +220,7 @@ def poster(p):
     prompt = (
         "Create a vertical 9:16 hotel marketing poster background as professional "
         "real-life commercial photography, not illustration, not abstract art.\n"
+        f"Theme of the poster: {product}.\n"
         f"Style: {style_desc}.\n{scene_part}{user_part}{motif_part}\n"
         "Composition: one clear realistic subject, generous clean empty space in the "
         "center and lower third for headline text, soft realistic lighting, high "
