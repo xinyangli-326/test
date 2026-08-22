@@ -50,6 +50,8 @@ class H(SimpleHTTPRequestHandler):
                 self.respond(200, {"image": "data:image/png;base64," + result})
             elif path.endswith("/api/poster-learn"):
                 self.respond(200, app_core.poster_learn(payload))
+            elif path.endswith("/api/poster-edit"):
+                self.respond(200, app_core.poster_edit(payload))
             elif path.endswith("/api/extract"):
                 self.respond(200, app_core.extract(payload))
             else:
