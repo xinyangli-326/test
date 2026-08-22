@@ -1228,10 +1228,13 @@ $('learnPoster').onclick = async event => {
   const button = event.currentTarget;
   const file = $('refPoster').files[0];
   if (!file) return alert('先上传一张想学习的参考海报');
+  const mode = $('learnMode').value;
   button.textContent = 'AI学习中…';
   $('posterLearnStatus').textContent = '正在分析参考海报的风格…';
   try {
     const { dataUrl, mime } = await resizeImageFile(file, 1024);
+    const thumb = await resizeImageFile(file, 180);
+    const ref = await resizeImageFile(file, 512);
     let style;
     try {
       if (IS_GITHUB_PAGES) throw new Error('use puter');
@@ -1248,15 +1251,14 @@ $('learnPoster').onclick = async event => {
         image.src = dataUrl;
         await image.decode();
         style = localStyleFromImage(image);
-        $('posterLearnStatus').textContent = 'AI视觉暂不可用，已用本地颜色分析兜底，可手动补充描述。';
       }
     }
-    const thumb = await resizeImageFile(file, 180);
     posterMemory.unshift({
       id: Date.now(),
       name: file.name,
       date: Date.now(),
       thumb: thumb.dataUrl,
+      ref: ref.dataUrl,
       style
     });
     if (posterMemory.length > 12) posterMemory = posterMemory.slice(0, 12);
@@ -1264,47 +1266,68 @@ $('learnPoster').onclick = async event => {
     renderPosterMemory();
     lsSet(LS.posterStyle, style);
 
-    const memoryStyle = aggregatePosterStyle() || style;
     const learnedCount = posterMemory.length;
-    $('posterLearnStatus').textContent = `已学习第 ${learnedCount} 张参考海报（${memoryStyle.style_name}），正在生成相似底图…`;
     let bgImage;
-    let bgEngine = 'OpenAI gpt-image-2（Vercel API）';
-    try {
-      if (IS_GITHUB_PAGES) throw new Error('use puter');
-      const data = await apiRequest('/api/poster', {
-        product: $('product').value,
-        style: memoryStyle.style_name || $('posterStyle').value,
-        scene: '',
-        description: `综合 ${learnedCount} 张参考海报风格：${memoryStyle.bg_prompt || memoryStyle.layout || ''}`,
-        elements: (memoryStyle.key_elements || []).join('，')
-      }, 30000);
+
+    if (mode === 'direct') {
+      bgImage = new Image();
+      bgImage.src = dataUrl;
+      await bgImage.decode();
+      snapshot();
+      backgroundImage = bgImage;
+      backgroundInfo = { mode: 'learn', style: '直接使用参考图' };
+      objects = objects.filter(object => object.type !== 'text');
+      selected = null;
+      draw();
+      renderLayers();
+      $('posterLearnStatus').textContent = `已把参考图「${file.name}」设为底图（记忆第 ${learnedCount} 张）。可直接添加文案，或继续投喂。`;
+    } else {
+      $('posterLearnStatus').textContent = `正在用参考图生成相似海报（已综合 ${learnedCount} 张记忆）…`;
+      const extras = posterMemory.slice(1, 4).map(item => item.ref).filter(Boolean);
+      const images = [
+        { data_b64: dataUrl.split(',')[1], mime },
+        ...extras.map(src => ({
+          data_b64: src.split(',')[1],
+          mime: src.split(';')[0].split(':')[1]
+        }))
+      ];
+      let data;
+      try {
+        if (IS_GITHUB_PAGES) throw new Error('use vercel');
+        data = await apiRequest('/api/poster-edit', {
+          images,
+          product: $('product').value,
+          scene: $('bgScene').value,
+          description: $('bgDesc').value
+        }, 60000);
+      } catch (editError) {
+        bgImage = new Image();
+        bgImage.src = dataUrl;
+        await bgImage.decode();
+        snapshot();
+        backgroundImage = bgImage;
+        backgroundInfo = { mode: 'learn', style: '直接使用参考图' };
+        objects = objects.filter(object => object.type !== 'text');
+        selected = null;
+        draw();
+        renderLayers();
+        $('posterLearnStatus').textContent = `AI 模仿生成暂不可用（${editError.message}），已用参考图直接作为底图。配置 Google AI Key 后可启用真正的图生图（Nano Banana 同款）。`;
+        return;
+      }
       bgImage = new Image();
       bgImage.src = data.image;
       await bgImage.decode();
-    } catch (apiError) {
-      if (!window.puter?.ai?.txt2img) throw new Error('Puter图片服务未加载');
-      const colorsText = (memoryStyle.colors || []).join('、') || '香槟金、暖白、深咖';
-      const layoutText = memoryStyle.layout || '';
-      const promptBase = memoryStyle.bg_prompt || '';
-      const puterModel = await pickPuterImageModel();
-      bgImage = await window.puter.ai.txt2img(
-        `综合 ${learnedCount} 张参考海报的风格，为"${$('product').value}"生成9:16酒店营销海报底图。
-参考风格要点：风格名【${memoryStyle.style_name}】；主色【${colorsText}】；构图【${layoutText}】；视觉元素【${(memoryStyle.key_elements || []).join('、')}】；风格描述【${String(promptBase).slice(0, 900)}】。
-要求：真实商业摄影/插画质感，主体清晰、居中偏下，上方留出干净空白放标题文字，柔和真实光线，高端酒店广告质感。严禁出现：文字、字母、数字、水印、Logo、人脸、手部、畸形肢体、奇怪生物、抽象漂浮物、拼贴、漫画风。画面克制、真实、高级。`,
-        { model: puterModel, ratio: '9:16' }
-      );
-      bgEngine = `Puter 公共AI（${puterModel}）`;
+      snapshot();
+      backgroundImage = bgImage;
+      backgroundInfo = { mode: 'learn', style: style?.style_name || 'AI模仿生成' };
+      const colors = {
+        accent: style?.colors?.[0] || '#c07c28',
+        ink: style?.colors?.[1] || '#8c6846',
+        sub: style?.colors?.[2] || '#5e4a39'
+      };
+      applyPosterCopy(localPosterCopy(), colors);
+      $('posterLearnStatus').textContent = `完成！已参考 ${learnedCount} 张海报生成相似底图并排版（引擎：Gemini Nano Banana 同款模型）。投喂越多越接近你的风格。`;
     }
-    snapshot();
-    backgroundImage = bgImage;
-    backgroundInfo = { mode: 'learn', style: memoryStyle.style_name };
-    const colors = {
-      accent: memoryStyle.colors?.[0] || '#c07c28',
-      ink: memoryStyle.colors?.[1] || '#8c6846',
-      sub: memoryStyle.colors?.[2] || '#5e4a39'
-    };
-    applyPosterCopy(localPosterCopy(), colors);
-    $('posterLearnStatus').textContent = `完成！已综合 ${learnedCount} 张参考海报生成底图并排版（引擎：${bgEngine}）。投喂越多越接近你的风格。`;
   } catch (error) {
     $('posterLearnStatus').textContent = `海报学习失败：${error.message}`;
   } finally {
