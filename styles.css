@@ -28,6 +28,7 @@ header>img{width:100%;max-width:440px;filter:drop-shadow(0 18px 35px rgba(140,10
 
 main{width:min(1240px,92vw);margin:auto}
 section{padding:85px 0}
+section[id]{scroll-margin-top:88px}
 .head{display:flex;justify-content:space-between;align-items:flex-start}
 .head h2{font:400 45px Georgia,"Songti SC";margin:8px 0}
 .head p{color:#807266}
@@ -97,14 +98,19 @@ select{cursor:pointer;position:relative;z-index:2}
 .bg-preview img{width:100%;border-radius:6px;display:block}
 .bg-preview{display:grid;gap:6px}
 
-/* 模板画廊 */
-.tpl-wrap{display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:center}
-.tpl-row{display:flex;gap:10px;overflow-x:auto;scroll-snap-type:x mandatory;padding-bottom:6px;scrollbar-width:thin}
-.tpl-card{border:1px solid #eadfd3;background:#fff;border-radius:8px;padding:8px;display:grid;gap:6px;justify-items:center;scroll-snap-align:start;flex:0 0 auto;width:150px}
-.tpl-card:hover{border-color:var(--gold);transform:translateY(-3px)}
-.tpl-card canvas{width:135px;height:240px;border-radius:4px;display:block}
-.tpl-card span{font-size:12px;color:#5e4a39;font-weight:bold}
-.tpl-wrap>button{border:1px solid #dacdbf;background:#fff;width:38px;height:38px;border-radius:50%;font-size:18px;color:var(--brown)}
+/* 海报功能分组 */
+.group{border:1px solid #eadfd3;border-radius:8px;background:#faf7f2;padding:12px;display:grid;gap:10px}
+.group summary{cursor:pointer;font-weight:bold;font-size:14px;color:#5e4a39;user-select:none}
+.group[open]{padding-bottom:14px}
+.learn-box{display:grid;gap:10px;padding:12px;background:#fff7ed;border:1px dashed #d8bf9d;border-radius:8px}
+.memory-head{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:#7a6a59}
+.memory-head button{padding:5px 10px;font-size:12px}
+.memory-row{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;scrollbar-width:thin}
+.memory-item{position:relative;flex:0 0 84px;border:1px solid #eadfd3;border-radius:6px;overflow:hidden;background:#fff}
+.memory-item img{width:84px;height:112px;object-fit:cover;display:block}
+.memory-item .nm{position:absolute;left:0;right:0;bottom:0;font-size:10px;color:#fff;background:rgba(41,35,30,.65);padding:3px 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.memory-item .del{position:absolute;top:2px;right:2px;width:20px;height:20px;line-height:18px;text-align:center;font-size:13px;color:#fff;background:rgba(41,35,30,.55);border:0;border-radius:50%;padding:0}
+.memory-item .del:hover{background:#a54832}
 
 /* 素材列表 */
 .layers{background:#fff;border:1px solid #eadfd3;border-radius:8px;padding:14px}
