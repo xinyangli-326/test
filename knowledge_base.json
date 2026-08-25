@@ -1693,6 +1693,7 @@
  "categories": {
   "product": {
    "name": "产品类知识库",
+  "doc_url": "https://trip.larkenterprise.com/docx/ArYQdJsHHoDSSJxgYozci92onsf",
    "description": "服务市场上架的酒店主题房与客房产品方案（宠物友好房、亲子房、影音房、舒睡房等）：帮商家讲清上新价值，引导酒店客户到服务市场采购落地。",
    "content_types": [
     "专业知识",
@@ -1832,5 +1833,16 @@
    "常规回本周期参考3至6个月"
   ],
   "notice": "以上数据来自内部参考方案，正式对外发布前需要核验口径。"
+ },
+ "lark": {
+  "docs": [
+   {
+    "key": "product",
+    "name": "产品类内容库",
+    "url": "https://trip.larkenterprise.com/docx/ArYQdJsHHoDSSJxgYozci92onsf",
+    "document_id": "ArYQdJsHHoDSSJxgYozci92onsf"
+   }
+  ],
+  "synced_at": ""
  }
 }

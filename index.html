@@ -43,6 +43,21 @@
       <div><small>KNOWLEDGE ARCHITECTURE</small><h2>五大知识库</h2></div>
       <p>每个大类拥有独立主题、内容类型与目标角色，可持续扩容。</p>
     </div>
+    <div class="lark-bar">
+      <span id="larkStatus">飞书内容库：未同步</span>
+      <button id="larkSyncBtn" type="button">🔄 同步飞书文档</button>
+    </div>
+    <details class="lark-paste">
+      <summary>📋 手动同步飞书内容（文档未公开时用：打开飞书文档 → 全选复制正文 → 粘贴入库）</summary>
+      <div class="lark-paste-box">
+        <textarea id="larkPasteText" rows="5" placeholder="粘贴飞书文档正文，系统会自动把内容并入知识库，后续文案/海报/视频生成都会参考这批数据…"></textarea>
+        <div class="lark-paste-row">
+          <input id="larkPasteName" placeholder="文档名称（如：产品类内容库）">
+          <button id="larkPasteBtn" type="button">📥 入库并应用</button>
+        </div>
+        <span class="hint">入库内容会保存在本机浏览器并立即用于生成；同一个文档名称再次粘贴会覆盖旧内容。</span>
+      </div>
+    </details>
     <div id="categories" class="categories"></div>
   </section>
 

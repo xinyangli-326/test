@@ -363,6 +363,181 @@ def token_plan_video_refs(p):
     return {"images": images}
 
 
+LARK_AUTH_URL = "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal"
+LARK_DOC_META = "https://open.feishu.cn/open-apis/docx/v1/documents/{doc_id}"
+LARK_DOC_RAW = "https://open.feishu.cn/open-apis/docx/v1/documents/{doc_id}/raw_content"
+
+
+def _lark_tenant_token(app_id, app_secret):
+    import requests
+
+    resp = requests.post(
+        LARK_AUTH_URL,
+        json={"app_id": app_id, "app_secret": app_secret},
+        timeout=15,
+    )
+    data = resp.json()
+    if resp.status_code != 200 or data.get("code") not in (0, None):
+        msg = data.get("msg") or str(data)[:200]
+        raise RuntimeError("飞书应用鉴权失败：" + str(msg))
+    token = data.get("tenant_access_token")
+    if not token:
+        raise RuntimeError("飞书应用鉴权未返回 token")
+    return token
+
+
+def _lark_time(value):
+    import time
+
+    try:
+        return time.strftime("%Y-%m-%d %H:%M", time.localtime(int(value) / 1000))
+    except Exception:
+        return str(value or "")
+
+
+def _lark_public_content(html):
+    """从公开飞书文档 HTML 尽力提取正文。"""
+    m = re.search(r'"(?:content|text|body)"\s*:\s*"((?:[^"\\]|\\.){20,})"', html)
+    if m:
+        try:
+            return m.group(1).encode("latin1", errors="ignore").decode("unicode_escape", errors="ignore")
+        except Exception:
+            return m.group(1)
+    return _html_to_text(html.encode("utf-8", errors="ignore"))
+
+
+def lark_doc_text(p):
+    """读取飞书文档正文。
+    优先走飞书开放平台 API（app_id/app_secret，可配在 Vercel 环境变量 LARK_APP_ID/LARK_APP_SECRET）；
+    未配置时尝试公开文档直抓（文档需设为「互联网上获得链接的人可阅读」）。
+    """
+    import requests
+
+    url = str(p.get("url") or "").strip()
+    document_id = str(p.get("document_id") or "").strip()
+    if not document_id and url:
+        m = re.search(r"/docx/([A-Za-z0-9]+)", url)
+        if m:
+            document_id = m.group(1)
+    if not document_id:
+        raise ValueError("缺少飞书文档链接或 document_id")
+    key = str(p.get("key") or "doc")
+    fallback_name = str(p.get("name") or "飞书内容库")
+    app_id = str(p.get("app_id") or os.getenv("LARK_APP_ID") or "").strip()
+    app_secret = str(p.get("app_secret") or os.getenv("LARK_APP_SECRET") or "").strip()
+    if app_id and app_secret:
+        token = _lark_tenant_token(app_id, app_secret)
+        headers = {"Authorization": "Bearer " + token}
+        meta_resp = requests.get(LARK_DOC_META.format(doc_id=document_id), headers=headers, timeout=15)
+        meta_data = meta_resp.json()
+        doc_meta = {}
+        if meta_resp.status_code == 200 and meta_data.get("code") in (0, None):
+            doc_meta = (meta_data.get("data") or {}).get("document") or {}
+        raw_resp = requests.get(LARK_DOC_RAW.format(doc_id=document_id), headers=headers, timeout=30)
+        raw_data = raw_resp.json()
+        if raw_resp.status_code != 200 or raw_data.get("code") not in (0, None):
+            msg = raw_data.get("msg") or str(raw_data)[:200]
+            raise RuntimeError("飞书文档读取失败（API）：" + str(msg))
+        content = (raw_data.get("data") or {}).get("content") or ""
+        if not content.strip():
+            raise RuntimeError("飞书文档内容为空（可能文档为空或应用没有该文档查看权限）")
+        return {
+            "key": key,
+            "name": doc_meta.get("title") or fallback_name,
+            "text": content[:30000],
+            "updated_at": _lark_time(doc_meta.get("update_time")),
+            "source": "api",
+        }
+    if not url:
+        url = "https://trip.larkenterprise.com/docx/" + document_id
+    raw, _ctype = _safe_fetch(url, timeout=20)
+    html = _decode_text(raw)
+    login_markers = (
+        "loginAppId",
+        "crossLoginUrl",
+        "grayLogin",
+        "accounts.feishu.cn",
+        "accounts.larkenterprise.com",
+    )
+    if any(marker in html for marker in login_markers):
+        raise RuntimeError(
+            "飞书文档未公开（访问返回登录页）：请在飞书分享设置里把权限改为「互联网上获得链接的人可阅读」，"
+            "或在 Vercel 环境变量配置 LARK_APP_ID / LARK_APP_SECRET（企业自建应用）后重试"
+        )
+    content = _lark_public_content(html)
+    if not content.strip():
+        raise RuntimeError(
+            "文档未公开或无法解析：请在飞书里把文档分享改为「互联网上获得链接的人可阅读」，"
+            "或在 Vercel 环境变量配置 LARK_APP_ID / LARK_APP_SECRET（企业自建应用，需云文档只读权限）后重试"
+        )
+    return {
+        "key": key,
+        "name": fallback_name,
+        "text": content[:30000],
+        "updated_at": "",
+        "source": "public",
+    }
+
+
+def lark_sync(p):
+    """同步飞书内容库：逐个拉取文档正文，返回可直接并入知识库的文本列表。"""
+    docs = p.get("docs") or []
+    if not docs and isinstance(KB.get("lark"), dict):
+        docs = KB["lark"].get("docs") or []
+    if not docs:
+        raise ValueError("未配置飞书文档：knowledge_base.json 的 lark.docs 为空")
+    results = []
+    for doc in docs:
+        try:
+            results.append(lark_doc_text(doc))
+        except Exception as error:
+            results.append(
+                {
+                    "key": str(doc.get("key") or "doc"),
+                    "name": str(doc.get("name") or "飞书内容库"),
+                    "error": str(error),
+                }
+            )
+    import time as _time
+
+    return {
+        "docs": results,
+        "synced_at": _time.strftime("%Y-%m-%d %H:%M:%S"),
+    }
+
+
+_LARK_KB_CACHE = {"at": 0.0, "docs": None, "error": "", "synced_at": ""}
+
+
+def knowledge_live():
+    """聚合知识库：静态 KB + 飞书内容库（带 10 分钟进程内缓存，避免每次请求都抓飞书）。"""
+    import copy
+    import time as _time
+
+    merged = copy.deepcopy(KB)
+    now = _time.time()
+    cached = _LARK_KB_CACHE
+    if cached["docs"] is None or now - cached["at"] > 600:
+        try:
+            synced = lark_sync({})
+            docs = synced.get("docs") or []
+            cached.update(
+                {
+                    "at": now,
+                    "docs": docs,
+                    "error": "",
+                    "synced_at": synced.get("synced_at") or "",
+                }
+            )
+        except Exception as error:
+            cached.update({"at": now, "docs": [], "error": str(error), "synced_at": ""})
+    lark = merged.setdefault("lark", {})
+    lark["docs"] = cached["docs"] or []
+    lark["synced_at"] = cached["synced_at"]
+    lark["last_error"] = cached["error"]
+    return merged
+
+
 POSTER_STYLES = {
     "香槟金轻奢": "champagne gold and warm ivory luxury style, soft metallic accents, elegant, high-end hotel brand",
     "橙黑促销": "vibrant orange and deep charcoal promotional style, bold dynamic energy, modern retail campaign",

@@ -21,7 +21,7 @@ class H(SimpleHTTPRequestHandler):
 
     def do_GET(self):
         if self.path.split("?")[0].endswith("/api/knowledge"):
-            self.respond(200, app_core.KB)
+            self.respond(200, app_core.knowledge_live())
         else:
             super().do_GET()
 
@@ -58,6 +58,8 @@ class H(SimpleHTTPRequestHandler):
                 self.respond(200, app_core.token_plan_video_get(payload))
             elif path.endswith("/api/token-plan-video-refs"):
                 self.respond(200, app_core.token_plan_video_refs(payload))
+            elif path.endswith("/api/lark-sync"):
+                self.respond(200, app_core.lark_sync(payload))
             elif path.endswith("/api/extract"):
                 self.respond(200, app_core.extract(payload))
             else:

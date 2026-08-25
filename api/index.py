@@ -34,7 +34,7 @@ def route(environ):
     if method == "GET" and path.endswith("/api/health"):
         return 200, {"ok": True, "version": "token-plan-sync-fallback-v2"}
     if method == "GET" and path.endswith("/api/knowledge"):
-        return 200, app_core.KB
+        return 200, app_core.knowledge_live()
     if method == "POST":
         # 安全：中转接口只接受白名单来源（浏览器 CORS 之外的直接调用一律拒绝），
         # 防止中转被第三方滥用/探测
@@ -75,6 +75,8 @@ def route(environ):
                 return 200, app_core.token_plan_video_get(payload)
             if path.endswith("/api/token-plan-video-refs"):
                 return 200, app_core.token_plan_video_refs(payload)
+            if path.endswith("/api/lark-sync"):
+                return 200, app_core.lark_sync(payload)
             if path.endswith("/api/extract"):
                 return 200, app_core.extract(payload)
             return 404, {"error": "not found"}

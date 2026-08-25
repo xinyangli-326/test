@@ -619,7 +619,8 @@ $('kbRefresh').onclick = async () => {
   btn.disabled = true;
   try {
     const cacheBust = 'v=' + Date.now();
-    const resp = await fetch('knowledge_base.json?' + cacheBust);
+    const resp = await fetch(apiUrl('/api/knowledge?' + cacheBust)).catch(() => null) ||
+      await fetch('knowledge_base.json?' + cacheBust);
     if (!resp.ok) throw new Error('knowledge_base.json 不可用');
     const data = await resp.json();
     applyKnowledge(data);
@@ -727,12 +728,18 @@ function renderContentTypes() {
 }
 
 function renderCategoryCards() {
-  $('categories').innerHTML = Object.values(knowledge.categories).map((value, index) => {
+  $('categories').innerHTML = Object.entries(knowledge.categories).map(([key, value], index) => {
     const topics = Array.isArray(value.topics) ? value.topics : Object.keys(value.topics || {});
+    const larkDocs = Array.isArray(knowledge.lark?.docs) ? knowledge.lark.docs : [];
+    const docUrl = value.doc_url || (larkDocs.find(doc => doc.key === key) || {}).url || '';
+    const docLink = docUrl
+      ? `<a class="cat-doc" href="${escapeHtml(docUrl)}" target="_blank" rel="noopener">📄 查看飞书文档 ↗</a>`
+      : '';
     return `<article class="cat reveal" style="transition-delay:${index * 70}ms">
       <b>${escapeHtml(value.name)}</b>
       <p>${escapeHtml(value.description || '持续沉淀酒店行业可复用内容。')}</p>
       <ul>${topics.slice(0, 5).map(topic => `<li>${escapeHtml(topic)}</li>`).join('')}</ul>
+      ${docLink}
     </article>`;
   }).join('');
   observeReveal();
@@ -745,6 +752,16 @@ function applyKnowledge(data) {
   if (!data?.categories) return false;
   const selected = $('category').value;
   knowledge = data;
+  const larkDocs = Array.isArray(data.lark?.docs) ? data.lark.docs.filter(doc => doc && doc.text && doc.text.trim()) : [];
+  if (larkDocs.length) {
+    knowledge.lark_docs = larkDocs;
+    $('larkStatus').textContent = `飞书内容库：已同步 ${larkDocs.length} 篇${data.lark.synced_at ? ' · ' + data.lark.synced_at : ''}`;
+    lsSet(LARK_CACHE_KEY, { docs: larkDocs, synced_at: data.lark.synced_at || '' });
+  } else {
+    const firstErr = Array.isArray(data.lark?.docs) ? data.lark.docs.find(doc => doc && doc.error) : null;
+    const errText = (firstErr && firstErr.error) || data.lark?.last_error;
+    if (errText) $('larkStatus').textContent = `飞书内容库：自动同步不可用（${errText}）`;
+  }
   window.__tripMallKB = {
     loaded: !!data.marketplace?.catalog,
     cats: Object.keys(data.categories).length,
@@ -758,18 +775,126 @@ function applyKnowledge(data) {
 
 function loadKnowledge() {
   const cacheBust = 'v=' + Date.now();
-  return fetch('knowledge_base.json?' + cacheBust).then(response => {
-    if (!response.ok) throw new Error('local kb unavailable');
+  return fetch(apiUrl('/api/knowledge?' + cacheBust)).then(response => {
+    if (!response.ok) throw new Error('live kb unavailable');
     return response.json();
   }).then(applyKnowledge).catch(() => {
-    return fetch(apiUrl('/api/knowledge')).then(response => {
-      if (!response.ok) throw new Error('knowledge unavailable');
+    return fetch('knowledge_base.json?' + cacheBust).then(response => {
+      if (!response.ok) throw new Error('local kb unavailable');
       return response.json();
     }).then(applyKnowledge).catch(() => {});
   });
 }
 
+/* ============================ 飞书内容库同步 ============================ */
+
+const LARK_CACHE_KEY = 'tripMall.larkDocs';
+
+function larkDocsConfig() {
+  const docs = knowledge.lark?.docs;
+  if (Array.isArray(docs) && docs.length) return docs;
+  return [{ key: 'product', name: '产品类内容库', url: 'https://trip.larkenterprise.com/docx/ArYQdJsHHoDSSJxgYozci92onsf' }];
+}
+
+function applyLarkDocs(docs, syncedAt) {
+  const ok = (docs || []).filter(doc => doc && doc.text && doc.text.trim());
+  const failed = (docs || []).filter(doc => doc && doc.error);
+  knowledge.lark_docs = ok;
+  let status;
+  if (!ok.length) {
+    status = failed.length
+      ? `飞书内容库：同步失败（${failed[0].error}）`
+      : '飞书内容库：未同步';
+  } else {
+    const totalChars = ok.reduce((sum, doc) => sum + doc.text.length, 0);
+    status = `飞书内容库：已同步 ${ok.length} 篇${syncedAt ? ' · ' + syncedAt : ''}`;
+    if (totalChars >= 1000) status += `（约 ${Math.round(totalChars / 100) / 10} 千字）`;
+  }
+  if (failed.length) status += `；${failed.length} 篇失败`;
+  $('larkStatus').textContent = status;
+  lsSet(LARK_CACHE_KEY, { docs: ok, synced_at: syncedAt || '' });
+  renderCategoryCards();
+}
+
+async function syncLark() {
+  const btn = $('larkSyncBtn');
+  const old = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '同步中…';
+  try {
+    const resp = await fetch(apiUrl('/api/lark-sync'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ docs: larkDocsConfig() })
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new Error(data.error || `同步失败（${resp.status}）`);
+    applyLarkDocs(data.docs, data.synced_at);
+  } catch (error) {
+    $('larkStatus').textContent = `飞书内容库：同步失败（${error.message}）`;
+  } finally {
+    btn.textContent = old;
+    btn.disabled = false;
+  }
+}
+
+function initLark() {
+  const cached = lsGet(LARK_CACHE_KEY);
+  if (cached && Array.isArray(cached.docs)) {
+    knowledge.lark_docs = cached.docs;
+    $('larkStatus').textContent = `飞书内容库：已缓存 ${cached.docs.length} 篇${cached.synced_at ? ' · ' + cached.synced_at : ''}`;
+  }
+  if ($('larkSyncBtn')) $('larkSyncBtn').onclick = syncLark;
+  syncLark();
+}
+
+function slugifyLarkName(name) {
+  const s = String(name || '飞书内容库').trim();
+  return s.replace(/[^\u4e00-\u9fa5a-zA-Z0-9]+/g, '-').slice(0, 24) || 'lark-manual';
+}
+
+function pasteLark() {
+  const text = $('larkPasteText').value.trim();
+  const status = $('larkStatus');
+  if (!text) {
+    status.textContent = '飞书内容库：请先粘贴文档正文再入库。';
+    return;
+  }
+  const name = $('larkPasteName').value.trim() || '飞书内容库（手动）';
+  const key = slugifyLarkName(name);
+  const now = new Date().toLocaleString('zh-CN', { hour12: false });
+  const doc = { key, name, text: text.slice(0, 30000), updated_at: '手动·' + now, source: 'paste' };
+  const docs = Array.isArray(knowledge.lark_docs) ? knowledge.lark_docs.filter(item => item.key !== key) : [];
+  docs.unshift(doc);
+  knowledge.lark_docs = docs;
+  lsSet(LARK_CACHE_KEY, { docs, synced_at: now });
+  $('larkPasteText').value = '';
+  $('larkPasteName').value = '';
+  status.textContent = `飞书内容库：已入库「${name}」（约 ${Math.round(text.length / 100) / 10} 千字），生成时自动参考。`;
+}
+
+function larkRelevant(query, maxChars = 900, maxDocs = 1) {
+  const docs = Array.isArray(knowledge.lark_docs) ? knowledge.lark_docs : [];
+  if (!docs.length) return '';
+  const q = String(query || '');
+  const keys = ['宠物', '亲子', '影音', '舒睡', '布草', '床垫', '毛巾', '牙具', '机器人', '咖啡', '采购', '优惠', '价格', '活动', '售后', '支付', '发票', '免房', '旅拍', '酒店', '客房'];
+  const score = text => {
+    let s = 0;
+    keys.forEach(k => { if (q.includes(k) && text.includes(k)) s += 2; });
+    q.split(/[\s,，。;；、]+/).filter(w => w.length >= 2).forEach(w => { if (text.includes(w)) s += 1; });
+    return s;
+  };
+  const ranked = docs
+    .map(d => ({ d, s: score((d.name || '') + ' ' + (d.text || '')) }))
+    .sort((a, b) => b.s - a.s);
+  const picked = ranked[0] && ranked[0].s > 0 ? ranked.slice(0, maxDocs) : docs.slice(0, maxDocs);
+  return picked.map(x => `【${x.d.name || x.d.key}（更新于 ${x.d.updated_at || '—'}）】\n${String(x.d.text || '').slice(0, maxChars)}`).join('\n\n');
+}
+
+if ($('larkPasteBtn')) $('larkPasteBtn').onclick = pasteLark;
+
 loadKnowledge();
+initLark();
 
 /* ============================ 视觉滚动 ============================ */
 
@@ -1494,6 +1619,11 @@ ${liveCatBlock || '（当前分类暂无明细，可参考其他分类）'}`);
   if (flagshipBlock) sections.push(`【服务市场热销/上新好物参考】\n${flagshipBlock}`);
   if (couponBlock) sections.push(`【服务市场当前活动券参考】\n${couponBlock}`);
   if (live.update_note) sections.push(`【数据时效说明】${live.update_note}`);
+  const larkDocs = Array.isArray(knowledge.lark_docs) ? knowledge.lark_docs : [];
+  if (larkDocs.length) {
+    sections.push(`【飞书内容库（自动同步，内容以飞书文档为准，引用时优先采用）】\n${larkDocs.map(d =>
+      `· ${d.name || d.key}（更新于 ${d.updated_at || '—'}）\n${String(d.text).slice(0, 9000)}`).join('\n\n')}`);
+  }
   sections.push(`【当前知识库分类】${catName}：${cat.description || ''}${topics ? '（可参考主题：' + topics + '）' : ''}`);
   if (mp.official_site) sections.push(`【官方来源】${mp.official_site}——涉及平台规则以官方页面为准`);
   return sections.join('\n\n');
@@ -2275,10 +2405,12 @@ $('aiPosterBtn').onclick = async event => {
   const assetTextBlock = extraText
     ? `\n需要展示在画面中的文字内容（由 AI 自动排版，务必全部准确呈现、不得遗漏或改写）：\n${extraText}`
     : '';
+  const larkBg = larkRelevant(`${instruction} ${product} ${needs}`, 900, 1);
+  const larkPromptBlock = larkBg ? `\n\n【飞书内容库背景（仅作内容与卖点参考，禁止把这些文字直接复制进海报画面）】\n${larkBg}` : '';
   const prompt = `请生成一张${psize.label}${ratioText}（画布 ${psize.w}×${psize.h}）的完整酒店营销海报成品图，图片内直接包含准确的中文文字（无错别字、无乱码）。
 主题：${product}。${styleText}
 用户指令（请严格执行）：${instruction}
-排版要求：标题醒目、卖点分条短句、信息层级清晰、高级商业广告质感${ctaHint}。${paletteText}${assetTextBlock}`;
+排版要求：标题醒目、卖点分条短句、信息层级清晰、高级商业广告质感${ctaHint}。${paletteText}${assetTextBlock}${larkPromptBlock}`;
   const aspectKey = psize.ratio > 1.1 ? '16:9' : (psize.ratio < 0.9 ? '9:16' : 'square');
   const genOpts = { aspect: aspectKey, size: psize.api };
   button.textContent = 'AI生成中…';
@@ -2932,7 +3064,7 @@ if ($('videoFirstFrame')) $('videoFirstFrame').onchange = async event => {
 
 if ($('videoT2vBtn')) $('videoT2vBtn').onclick = async event => {
   const button = event.currentTarget;
-  const prompt = $('videoT2vPrompt').value.trim();
+  let prompt = $('videoT2vPrompt').value.trim();
   const file = $('videoFirstFrame').files[0];
   const status = $('videoT2vStatus');
   let media = [];
@@ -2949,6 +3081,8 @@ if ($('videoT2vBtn')) $('videoT2vBtn').onclick = async event => {
     status.textContent = '请先输入视频描述（或上传首帧图片后只写运动描述）。';
     return;
   }
+  const larkBg = larkRelevant(`${prompt} ${$('product').value || ''}`, 700, 1);
+  if (larkBg) prompt += `\n\n【背景知识（仅作内容参考，不要朗读或把这些文字显示在画面里）】\n${larkBg}`;
   const kind = media.length ? 'i2v' : 't2v';
   await runVideoTask(kind, { prompt, media, ...videoCommonParams('videoT2v') }, {
     progressId: 'videoT2vProgress',
@@ -3027,7 +3161,7 @@ if ($('videoRefUrlBtn')) $('videoRefUrlBtn').onclick = async () => {
 
 if ($('videoRefBtn')) $('videoRefBtn').onclick = async event => {
   const button = event.currentTarget;
-  const prompt = $('videoRefPrompt').value.trim();
+  let prompt = $('videoRefPrompt').value.trim();
   const status = $('videoRefStatus');
   if (!prompt) {
     status.textContent = '请先输入视频描述（用 [Image 1]、[Image 2] 指代参考图）。';
@@ -3037,6 +3171,8 @@ if ($('videoRefBtn')) $('videoRefBtn').onclick = async event => {
     status.textContent = '请先上传参考图或解析链接提取图片。';
     return;
   }
+  const larkBg = larkRelevant(`${prompt} ${$('product').value || ''}`, 700, 1);
+  if (larkBg) prompt += `\n\n【背景知识（仅作内容参考，不要朗读或把这些文字显示在画面里）】\n${larkBg}`;
   const media = videoRefs.map(url => ({ type: 'reference_image', url }));
   await runVideoTask('r2v', { prompt, media, ...videoCommonParams('videoRef') }, {
     progressId: 'videoRefProgress',
