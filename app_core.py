@@ -406,6 +406,122 @@ def _lark_public_content(html):
     return _html_to_text(html.encode("utf-8", errors="ignore"))
 
 
+def _lark_docx_parse(html):
+    """解析公开飞书文档（docx）页面内嵌的 window.DATA → 还原正文与附件列表。
+    返回 {"text": ..., "files": [{"token","name","mimeType","size"}], "title": ...}
+    """
+    marker = "window.DATA = Object.assign({}, window.DATA, { clientVars: Object("
+    idx = html.find(marker)
+    if idx < 0:
+        # 兼容其他挂载形式
+        m2 = re.search(r"clientVars:\s*Object\((\{)", html)
+        if not m2:
+            return None
+        seg = html[m2.start(1):]
+    else:
+        seg = html[idx + len(marker):]  # 从 clientVars 的 { 开始
+    depth = 0
+    end = 0
+    for i, ch in enumerate(seg):
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                end = i + 1
+                break
+    if not end:
+        return None
+    try:
+        cv = json.loads(seg[:end])
+    except Exception:
+        return None
+    data = cv.get("data") or {}
+    block_map = data.get("block_map") or {}
+    sequence = data.get("block_sequence") or []
+    seq_index = {bid: i for i, bid in enumerate(sequence)}
+
+    def children_of(bid):
+        kids = [b for b in block_map.values() if b.get("parent_id") == bid]
+        kids.sort(key=lambda b: seq_index.get(b.get("id"), 99999))
+        return kids
+
+    def block_text(bid):
+        b = block_map.get(bid) or {}
+        dd = b.get("data") or {}
+        parts = []
+        if dd.get("type") == "text":
+            it = (dd.get("text") or {}).get("initialAttributedTexts") or {}
+            tm = it.get("text") or {}
+            parts.append("".join(v for _, v in sorted(tm.items(), key=lambda kv: int(kv[0]))))
+        for c in children_of(bid):
+            parts.append(block_text(c.get("id")))
+        for cid in dd.get("children") or []:
+            parts.append(block_text(cid))
+        return "".join(parts).strip()
+
+    # 从 page 根块递归构建文档结构（段落 + 表格）
+    def render_block(bid):
+        b = block_map.get(bid) or {}
+        dd = b.get("data") or {}
+        btype = dd.get("type")
+        out = []
+        if btype == "text":
+            t = block_text(bid)
+            if t:
+                out.append(t)
+        elif btype == "table":
+            cols = dd.get("columns_id") or []
+            rows_ids = dd.get("rows_id") or []
+            cell_set = dd.get("cell_set") or {}
+            for rid in rows_ids:
+                cells = []
+                for cid in cols:
+                    rid_clean = rid[3:] if rid.startswith("row") else rid
+                    cid_clean = cid[3:] if cid.startswith("col") else cid
+                    info = cell_set.get("row" + rid_clean + "col" + cid_clean) or {}
+                    cells.append(block_text(info.get("block_id") or ""))
+                out.append(" | ".join(cells))
+        for cid in dd.get("children") or []:
+            out.extend(render_block(cid))
+        return out
+
+    lines = []
+    for bid in sequence:
+        b = block_map.get(bid) or {}
+        if (b.get("data") or {}).get("type") == "page":
+            lines = render_block(bid)
+            break
+    files = []
+    for b in block_map.values():
+        dd = b.get("data") or {}
+        if dd.get("type") == "file":
+            f = dd.get("file") or {}
+            if f.get("token"):
+                files.append(
+                    {
+                        "token": f["token"],
+                        "name": f.get("name") or "",
+                        "mimeType": f.get("mimeType") or "",
+                        "size": f.get("size") or 0,
+                    }
+                )
+    text = "\n".join(lines).strip()
+    title = ""
+    tm = re.search(r'"title":"((?:[^"\\]|\\.){1,200})"', html)
+    if tm:
+        raw_title = tm.group(1)
+        try:
+            title = raw_title.encode("latin1", errors="ignore").decode("unicode_escape", errors="ignore")
+        except Exception:
+            title = raw_title
+        if not title or not re.search(r"[\u4e00-\u9fff]", title):
+            title = raw_title
+    if not text:
+        return None
+    return {"text": text, "files": files, "title": title}
+
+
 def lark_doc_text(p):
     """读取飞书文档正文。
     优先走飞书开放平台 API（app_id/app_secret，可配在 Vercel 环境变量 LARK_APP_ID/LARK_APP_SECRET）；
@@ -456,15 +572,17 @@ def lark_doc_text(p):
         "loginAppId",
         "crossLoginUrl",
         "grayLogin",
-        "accounts.feishu.cn",
-        "accounts.larkenterprise.com",
     )
     if any(marker in html for marker in login_markers):
         raise RuntimeError(
             "飞书文档未公开（访问返回登录页）：请在飞书分享设置里把权限改为「互联网上获得链接的人可阅读」，"
             "或在 Vercel 环境变量配置 LARK_APP_ID / LARK_APP_SECRET（企业自建应用）后重试"
         )
-    content = _lark_public_content(html)
+    parsed = _lark_docx_parse(html)
+    if parsed:
+        content = parsed.get("text") or ""
+    else:
+        content = _lark_public_content(html)
     if not content.strip():
         raise RuntimeError(
             "文档未公开或无法解析：请在飞书里把文档分享改为「互联网上获得链接的人可阅读」，"
@@ -472,8 +590,9 @@ def lark_doc_text(p):
         )
     return {
         "key": key,
-        "name": fallback_name,
+        "name": (parsed or {}).get("title") or fallback_name,
         "text": content[:30000],
+        "files": (parsed or {}).get("files") or [],
         "updated_at": "",
         "source": "public",
     }
