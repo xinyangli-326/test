@@ -387,12 +387,18 @@ def _lark_tenant_token(app_id, app_secret):
 
 
 def _lark_time(value):
-    import time
+    from datetime import datetime, timezone, timedelta
 
     try:
-        return time.strftime("%Y-%m-%d %H:%M", time.localtime(int(value) / 1000))
+        return datetime.fromtimestamp(int(value) / 1000, tz=timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M")
     except Exception:
         return str(value or "")
+
+
+def _cn_now():
+    from datetime import datetime, timezone, timedelta
+
+    return datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M:%S")
 
 
 def _lark_public_content(html):
@@ -617,11 +623,9 @@ def lark_sync(p):
                     "error": str(error),
                 }
             )
-    import time as _time
-
     return {
         "docs": results,
-        "synced_at": _time.strftime("%Y-%m-%d %H:%M:%S"),
+        "synced_at": _cn_now(),
     }
 
 
