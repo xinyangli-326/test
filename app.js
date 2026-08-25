@@ -725,6 +725,40 @@ function renderSelectors() {
 function renderContentTypes() {
   const category = knowledge.categories[$('category').value] || LOCAL_CATEGORIES.product;
   $('contentType').innerHTML = category.content_types.map(value => `<option value="${value}">${value}</option>`).join('');
+  renderKbPosterImages();
+}
+
+/* 知识库配图：帮助文档里的官方截图，点击选作海报参考图 */
+let selectedKbImage = '';
+
+function currentHelpImages() {
+  const cat = knowledge.categories[$('category').value] || {};
+  const docs = Array.isArray(cat.help_docs) ? cat.help_docs : [];
+  const images = [];
+  docs.forEach(doc => (doc.images || []).forEach(file => images.push({ doc: doc.title, file })));
+  return images;
+}
+
+function renderKbPosterImages() {
+  const box = $('kbPosterImgs');
+  if (!box) return;
+  const images = currentHelpImages();
+  if (!images.length) {
+    box.innerHTML = '<span class="hint">当前知识库分类暂无配图（平台/支付类帮助文档里有官方截图）</span>';
+    return;
+  }
+  box.innerHTML = images.map((img, i) => `
+    <button type="button" class="kb-img${selectedKbImage === img.file ? ' on' : ''}" data-i="${i}" title="${escapeHtml(img.doc)}">
+      <img src="${escapeHtml(img.file)}" alt="">
+    </button>`).join('');
+  box.querySelectorAll('.kb-img').forEach(btn => {
+    btn.onclick = () => {
+      const img = images[+btn.dataset.i];
+      selectedKbImage = selectedKbImage === img.file ? '' : img.file;
+      renderKbPosterImages();
+      $('aiPosterStatus').textContent = selectedKbImage ? `已选知识库配图作为参考：${img.doc}（可再点取消）` : '';
+    };
+  });
 }
 
 function renderCategoryCards() {
@@ -1640,6 +1674,11 @@ ${liveCatBlock || '（当前分类暂无明细，可参考其他分类）'}`);
     sections.push(`【飞书内容库（自动同步，内容以飞书文档为准，引用时优先采用）】\n${larkDocs.map(d =>
       `· ${d.name || d.key}（更新于 ${d.updated_at || '—'}）\n${String(d.text).slice(0, 9000)}`).join('\n\n')}`);
   }
+  const helpDocs = Array.isArray(cat.help_docs) ? cat.help_docs : [];
+  if (helpDocs.length) {
+    sections.push(`【服务市场官方帮助文档（${catName}，引用时以文档为准）】\n${helpDocs.map(d =>
+      `· ${d.title}：\n${String(d.text).slice(0, 2500)}`).join('\n\n')}`);
+  }
   sections.push(`【当前知识库分类】${catName}：${cat.description || ''}${topics ? '（可参考主题：' + topics + '）' : ''}`);
   if (mp.official_site) sections.push(`【官方来源】${mp.official_site}——涉及平台规则以官方页面为准`);
   return sections.join('\n\n');
@@ -2439,7 +2478,29 @@ $('aiPosterBtn').onclick = async event => {
     }
     let src;
     const imgCfg = getImageConfig();
-    if (file) {
+    if (selectedKbImage) {
+      let kbDataUrl = '';
+      try {
+        const kbResp = await fetch(selectedKbImage);
+        const kbBlob = await kbResp.blob();
+        const kbFile = new File([kbBlob], 'kb.png', { type: kbBlob.type || 'image/png' });
+        const resized = await resizeImageFile(kbFile, 1024);
+        kbDataUrl = resized.dataUrl;
+      } catch (kbError) {
+        kbDataUrl = '';
+      }
+      if (kbDataUrl) {
+        try {
+          src = await openAILikeImage(prompt, { ...genOpts, reference: kbDataUrl });
+        } catch (refError) {
+          src = await openAILikeImage(prompt, genOpts);
+          $('aiPosterStatus').textContent = `知识库配图编辑不可用（${refError.message}），已改用文字指令生成。`;
+        }
+      } else {
+        src = await openAILikeImage(prompt, genOpts);
+        $('aiPosterStatus').textContent = '知识库配图读取失败，已改用文字指令生成。';
+      }
+    } else if (file) {
       const { dataUrl } = await resizeImageFile(file, 1024);
       try {
         src = await openAILikeImage(prompt, { ...genOpts, reference: dataUrl });
