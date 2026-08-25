@@ -451,27 +451,30 @@ no deformed anatomy, no extra hands, no copyrighted character imitation."""
 
 def poster(p):
     product = p.get("product", "酒店服务市场")
-    style = p.get("style", "香槟金轻奢")
+    style = p.get("style", "")
     scene = p.get("scene", "")
     desc = (p.get("description") or "").strip()
     elements = (p.get("elements") or "").strip()
-    style_desc = POSTER_STYLES.get(style, POSTER_STYLES["香槟金轻奢"])
+    style_desc = POSTER_STYLES.get(style, "")
+    if style_desc:
+        style_line = f" Style: {style_desc}."
+    else:
+        style_line = " Style: color palette and mood naturally matched to the theme, rich and varied, avoid a single monotonous brand tone."
     scene_desc = POSTER_SCENES.get(scene, "") if scene else ""
     user_part = f" The main subject MUST be exactly: {desc}." if desc else ""
     motif_part = f" Include subtle supporting motifs related to: {elements}." if elements else ""
     scene_part = f" Scene: {scene_desc}." if scene_desc else " Scene: elegant premium hotel environment."
+    palette_part = "champagne gold / warm ivory / dark coffee palette." if "香槟" in style or "金色" in style or "轻奢" in style else "a color palette naturally matched to the theme and scene, rich and varied."
     prompt = (
         "Create a vertical 9:16 hotel marketing poster background as professional "
-        "real-life commercial photography, not illustration, not abstract art.\n"
+        "commercial photography with a polished advertising look.\n"
         f"Theme of the poster: {product}.\n"
-        f"Style: {style_desc}.\n{scene_part}{user_part}{motif_part}\n"
+        f"{style_line}{scene_part}{user_part}{motif_part}\n"
         "Composition: one clear realistic subject, generous clean empty space in the "
         "center and lower third for headline text, soft realistic lighting, high "
-        "dynamic range, sharp focus, premium Trip MALL brand palette (champagne gold "
-        "#C39F77, warm ivory, dark coffee).\n"
-        "MUST NOT contain: any text, letters, numbers, watermark, logo, people's faces, "
-        "hands, deformed bodies, strange creatures, abstract floating shapes, collage, "
-        "comic or cartoon style, overcrowded scenes. Keep it calm, realistic and premium."
+        "dynamic range, sharp focus, " + palette_part + "\n"
+        "Avoid: any text, watermark, logo, distorted faces or bodies, messy collage, "
+        "or a flat single-tone look. Keep it natural, vivid and premium."
     )
     return image(prompt, "1024x1536", transparent=False)
 
@@ -485,7 +488,7 @@ def poster_learn(p):
     prompt = """分析这张酒店营销海报，只返回JSON（不要Markdown）：
 {
   "style_name": "一句话概括风格",
-  "colors": ["#C39F77", "#FFFFFF"],
+  "colors": ["从这张海报实际主色中提取的2-4个真实色值"],
   "layout": "构图方式描述",
   "font_feel": "字体气质，如粗黑、衬线优雅、圆润可爱",
   "tone": "文案语气，如亲切、高级、促销感",

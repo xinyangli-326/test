@@ -1648,7 +1648,29 @@ function syncControls() {
   if (selected.font) $('font').value = selected.font;
 }
 
-function addText(text, x, y, size = 72, color = '#8c6846', font = 'Microsoft YaHei', weight = 700) {
+function smartTextColor() {
+  try {
+    const src = backgroundImage || (objects.find(o => o.type === 'image') || {}).src;
+    if (!src) return '#29231e';
+    const temp = document.createElement('canvas');
+    temp.width = 24;
+    temp.height = 24;
+    const g = temp.getContext('2d');
+    g.drawImage(src, 0, 0, 24, 24);
+    const d = g.getImageData(0, 0, 24, 24).data;
+    let sum = 0, n = 0;
+    for (let i = 0; i < d.length; i += 4) {
+      sum += 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+      n++;
+    }
+    const avg = sum / n;
+    return avg > 150 ? '#29231e' : '#ffffff';
+  } catch {
+    return '#29231e';
+  }
+}
+
+function addText(text, x, y, size = 72, color = smartTextColor(), font = 'Microsoft YaHei', weight = 700) {
   addObject({
     type: 'text', text, x, y, size, color, font, weight,
     rotation: 0, width: 400, height: size
@@ -2032,12 +2054,15 @@ $('aiBg').onclick = async event => {
   const desc = payload.description
     ? `画面主体必须精确为：${payload.description}。`
     : '';
-  const qualityPrompt = `Create a vertical 9:16 hotel marketing poster background for "${payload.product}".
-Must be professional real-life commercial photography, not illustration, not abstract art.
-Style: ${payload.style}. ${sceneText}${desc}
-Optional supporting motifs: ${payload.elements || 'none'}.
-Composition: one clear realistic subject related to the theme, generous clean empty space in the center and upper area for headline text, soft realistic lighting, high dynamic range, premium champagne gold / warm ivory / dark coffee brand palette.
-Strictly forbidden: any text, letters, numbers, watermark, logo, people's faces, hands, deformed bodies, strange creatures, floating abstract shapes, collage, comic or cartoon style. Keep it calm, realistic and premium.`;
+  const paletteText = /香槟|金色|轻奢|咖啡|深咖/.test(String(payload.style || ''))
+    ? 'Premium champagne gold / warm ivory / dark coffee palette.'
+    : 'Color palette naturally matched to the theme and scene, rich and varied, avoid a single monotonous brand tone.';
+  const styleLine = payload.style ? `，整体风格：${payload.style}` : '';
+  const qualityPrompt = `请为「${payload.product}」生成一张 9:16 竖版酒店营销海报底图${styleLine}。
+${sceneText}${desc}
+${payload.elements ? `可搭配的视觉元素：${payload.elements}。` : ''}
+画面要求：主体与主题紧密相关、构图大气有层次，上方和中部预留干净空白用于排版标题与文案；配色根据主题自然搭配、丰富有质感${paletteText.includes('champagne') ? '（香槟金、暖白、深咖）' : ''}；光线自然、有明暗对比、商业广告质感。
+底图内不要出现任何文字、水印、Logo、人脸或畸形形象。`;
   try {
     let image;
     if (hasByokImage()) {
@@ -2164,13 +2189,16 @@ $('aiPosterBtn').onclick = async event => {
   const instruction = cmd || `为${product}生成营销海报${needs ? `，需求：${needs}` : ''}`;
   const styleText = style ? `，整体风格：${style}` : '';
   const ctaHint = /CTA|按钮|引导|立即|了解详情/i.test(instruction) ? '' : '；如指令未指定行动按钮，可在底部放一句引导，如「登录服务市场了解详情」';
+  const paletteText = /香槟|金色|轻奢|咖啡|深咖/.test(style)
+    ? '除非用户指定，默认使用香槟金、暖白、深咖配色。'
+    : '配色由主题与文案自然决定，丰富有层次、有明暗对比，避免全篇单一色调或一成不变的品牌色。';
   const psize = posterSizeInfo();
   const gcd = (a, b) => (b ? gcd(b, a % b) : a);
   const ratioText = `${psize.w / gcd(psize.w, psize.h)}:${psize.h / gcd(psize.w, psize.h)}`;
   const prompt = `请生成一张${psize.label}${ratioText}（画布 ${psize.w}×${psize.h}）的完整酒店营销海报成品图，图片内直接包含准确的中文文字（无错别字、无乱码）。
 主题：${product}。${styleText}
 用户指令（请严格执行）：${instruction}
-排版要求：标题醒目、卖点分条短句、信息层级清晰、高级商业广告质感${ctaHint}。除非用户指定，默认使用香槟金#C39F77、暖白、深咖配色。`;
+排版要求：标题醒目、卖点分条短句、信息层级清晰、高级商业广告质感${ctaHint}。${paletteText}`;
   const aspectKey = psize.ratio > 1.1 ? '16:9' : (psize.ratio < 0.9 ? '9:16' : 'square');
   const genOpts = { aspect: aspectKey, size: psize.api };
   button.textContent = 'AI生成中…';
@@ -2381,7 +2409,7 @@ function resizeImageFile(file, maxSide) {
 
 async function puterVision(file) {
   if (!window.puter?.ai?.chat) throw new Error('公共AI不可用');
-  const prompt = `分析这张酒店营销海报，只返回JSON：{"style_name":"一句话概括风格","colors":["#C39F77","#FFFFFF","#29231E"],"layout":"构图方式描述","font_feel":"字体气质","tone":"文案语气","key_elements":["元素1","元素2"],"bg_prompt":"用于AI生成类似风格底图的英文描述，要求9:16竖版、无文字、无Logo、无版权角色","layout_guide":"排版建议"}。不要复制海报上的具体文字内容。`;
+  const prompt = `分析这张酒店营销海报，只返回JSON：{"style_name":"一句话概括风格","colors":["#RRGGBB","#RRGGBB","#RRGGBB"],"layout":"构图方式描述","font_feel":"字体气质","tone":"文案语气","key_elements":["元素1","元素2"],"bg_prompt":"用于AI生成类似风格底图的英文描述，要求9:16竖版、无文字、无Logo、无版权角色","layout_guide":"排版建议"}。colors 必须从这张海报的实际主色中提取（取2-4个真实出现的主色），不要臆造或套用固定色。不要复制海报上的具体文字内容。`;
   const response = await window.puter.ai.chat(prompt, { images: [file] });
   return extractJson(puterText(response));
 }
