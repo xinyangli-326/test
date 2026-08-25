@@ -1383,17 +1383,20 @@ function knowledgeContext(payload) {
   const guarantees = mp.advantages?.official_guarantees || '';
   const live = mp.live || {};
   const liveCats = Array.isArray(live.categories) ? live.categories : [];
-  const matchedCats = liveCats.filter(c => !payload.category || c.name === payload.category || c.parent === payload.category);
+  const wantsCompare = /对比|比较|分析|竞品|哪个好|哪家好|品牌推荐|选型|区别|差异|怎么选/.test(String(payload.needs || '') + String(payload.product || '') + String(payload.content_type || ''));
+  const matchedCats = liveCats.filter(c => wantsCompare || !payload.category || c.name === payload.category || c.parent === payload.category);
   const liveCatBlock = matchedCats.length
-    ? matchedCats.map(c =>
+    ? matchedCats.slice(0, wantsCompare ? 10 : 6).map(c =>
         `· ${c.parent} / ${c.name}（cat=${c.cat}）\n` +
         `  三级分类：${(c.sub_categories || []).join('、') || '—'}\n` +
-        `  代表品牌：${(c.brands || []).join('、') || '—'}\n` +
+        `  代表品牌：${(c.brands || []).join('、') || '—'}` +
+        (wantsCompare && c.brands?.length ? `（服务市场在售，可按需对比）` : '') + '\n' +
         `  在售代表商品：${(c.sample_products || []).join('；') || '—'}`
       ).join('\n')
     : '';
   const wantsRecommendation = /推荐|好物|精选|清单|爆款/.test(String(payload.needs || '') + String(payload.content_type || ''));
   const kw = String(payload.needs || '') + String(payload.product || '');
+  const isBroadCat = !payload.category || ['product', 'platform', 'campaign', 'insight', 'payment'].includes(payload.category);
   const kwScore = p => {
     let s = 0;
     const hit = t => (p.name || '').includes(t) || (p.cat || '').includes(t) || (p.note || '').includes(t);
@@ -1402,9 +1405,9 @@ function knowledgeContext(payload) {
   };
   const flagshipBlock = Array.isArray(live.flagship_products)
     ? live.flagship_products
-        .filter(p => wantsRecommendation || !payload.category || !p.cat || p.cat === payload.category || p.cat.includes(payload.category))
+        .filter(p => wantsRecommendation || wantsCompare || isBroadCat || !p.cat || p.cat === payload.category || p.cat.includes(payload.category))
         .sort((a, b) => kwScore(b) - kwScore(a))
-        .slice(0, wantsRecommendation ? 18 : 12)
+        .slice(0, (wantsRecommendation || wantsCompare) ? 24 : 12)
         .map(p => `· ${p.name}｜${p.cat || ''}｜${p.price}｜${p.sales || ''}${p.rating ? '｜' + p.rating : ''}${p.coupon ? '｜' + p.coupon : ''}${p.note ? '｜' + p.note : ''}`)
         .join('\n')
     : '';
@@ -1435,6 +1438,7 @@ function buildSystemPrompt(payload) {
 }
 
 function buildTaskPrompt(payload) {
+  const wantsCompare = /对比|比较|分析|竞品|哪个好|哪家好|品牌推荐|选型|区别|差异|怎么选/.test(String(payload.needs || '') + String(payload.product || '') + String(payload.content_type || ''));
   return `请为以下任务输出内容：
 产品/主题：${payload.product}
 目标视角：${payload.persona}
@@ -1454,7 +1458,9 @@ ${CHANNEL_FORMATS[payload.channel] || '按其使用场景输出完整成稿。'}
 2. 禁止复述或总结用户需求；禁止空话、套话、车轱辘话凑字数——字数宁短勿水，严格卡在格式要求范围内。
 3. 站在服务市场/商家面向酒店客户的角度展开（除非用户明确要求酒店视角）。
 4. 若用户给出已有文案或细节要求（调整细节、强调IP、强调功能、强调价格），先理解原意再改写，不丢失关键信息。
-5. 内部数字写成参考值，不编造平台规则；避免“值得注意的是”“综上所述”“在这个…的时代”等AI腔。`;
+5. 内部数字写成参考值，不编造平台规则；避免“值得注意的是”“综上所述”“在这个…的时代”等AI腔。
+${wantsCompare ? `6. 本任务需要品牌对比/分析：必须从【服务市场实时商品库】与【热销/上新好物参考】中引用真实在售品牌与商品名（如红杉树、尊客、恒创、悦诗兰庭、洁柔、小帅、奶龙、B.Duck、梦百合等），逐品牌说明定位、代表商品、价格区间、销量/好评与适用酒店场景；禁止用“某品牌”“部分品牌”“一些品牌”等含糊表述代替具体品牌名。若知识库中某品类缺少品牌数据，如实说明“该品类暂无明确品牌数据”，不得编造。` : ''}
+7. 涉及具体价格、销量、优惠券时，标注“参考价/参考销量”，并提示以服务市场页面为准。`;
 }
 
 function buildGeneratePrompt(payload) {

@@ -284,31 +284,35 @@ def generate(p):
     adv = mp.get("advantages", {})
     live = mp.get("live", {}) or {}
     live_cats = live.get("categories") or []
+    wants_compare = bool(re.search(r"对比|比较|分析|竞品|哪个好|哪家好|品牌推荐|选型|区别|差异|怎么选",
+                                   str(p.get("needs") or "") + str(p.get("product") or "") + str(p.get("content_type") or "")))
     matched_live = [
         c for c in live_cats
-        if not p.get("category") or c.get("name") == p.get("category") or c.get("parent") == p.get("category")
+        if wants_compare or not p.get("category") or c.get("name") == p.get("category") or c.get("parent") == p.get("category")
     ]
     live_cat_lines = []
-    for c in matched_live[:6]:
+    for c in matched_live[: (10 if wants_compare else 6)]:
+        brand_note = "（服务市场在售，可按需对比）" if wants_compare and c.get("brands") else ""
         live_cat_lines.append(
             f"- {c.get('parent')} / {c.get('name')}（cat={c.get('cat')}）："
             f"三级分类：{'、'.join(c.get('sub_categories') or []) or '—'}；"
-            f"代表品牌：{'、'.join(c.get('brands') or []) or '—'}；"
+            f"代表品牌：{'、'.join(c.get('brands') or []) or '—'}{brand_note}；"
             f"在售代表商品：{'；'.join(c.get('sample_products') or []) or '—'}"
         )
     wants_recommendation = bool(re.search(r"推荐|好物|精选|清单|爆款", str(p.get("needs") or "") + str(p.get("content_type") or "")))
     flagship_all = live.get("flagship_products") or []
     kw = str(p.get("needs") or "") + str(p.get("product") or "")
+    is_broad_cat = not p.get("category") or p.get("category") in ("product", "platform", "campaign", "insight", "payment")
     kw_tags = ["宠物", "布草", "亲子", "影音", "舒睡", "智能", "机器人", "耗品", "牙具", "毛巾", "床垫", "吹风机", "摄影", "旅拍", "电玩", "电竞", "咖啡", "食材"]
     def kw_score(item):
         name = str(item.get("name") or "") + str(item.get("cat") or "") + str(item.get("note") or "")
         return sum(3 for t in kw_tags if t in kw and t in name)
     flagship = [
         p_ for p_ in flagship_all
-        if wants_recommendation or not p.get("category") or not p_.get("cat") or p_["cat"] == p.get("category") or p_["cat"] in str(p.get("category"))
+        if wants_recommendation or wants_compare or is_broad_cat or not p_.get("cat") or p_["cat"] == p.get("category") or p_["cat"] in str(p.get("category"))
     ]
     flagship.sort(key=kw_score, reverse=True)
-    flagship = flagship[: (18 if wants_recommendation else 12)]
+    flagship = flagship[: (24 if (wants_recommendation or wants_compare) else 12)]
     flagship_lines = [
         f"- {p_.get('name')}｜{p_.get('cat') or ''}｜{p_.get('price') or ''}｜{p_.get('sales') or ''}"
         f"{'｜' + p_.get('rating') if p_.get('rating') else ''}"
@@ -343,6 +347,13 @@ def generate(p):
         if live.get("update_note"):
             live_parts.append("【数据时效说明】" + live["update_note"])
         live_extra = "\n".join(live_parts)
+    compare_rule = (
+        "6. 本任务需要品牌对比/分析：必须从【服务市场实时商品库】与【热销/上新好物参考】中引用真实在售品牌与商品名"
+        "（如红杉树、尊客、恒创、悦诗兰庭、洁柔、小帅、奶龙、B.Duck、梦百合等），逐品牌说明定位、代表商品、价格区间、"
+        "销量/好评与适用酒店场景；禁止用“某品牌”“部分品牌”“一些品牌”等含糊表述代替具体品牌名。"
+        "若知识库中某品类缺少品牌数据，如实说明“该品类暂无明确品牌数据”，不得编造。"
+        if wants_compare else ""
+    )
     prompt = f"""你是携程酒店服务市场的资深内容运营，为酒店写真实、生动、可直接发布的中文内容。
 {stance}
 {product_brief}
@@ -367,7 +378,9 @@ def generate(p):
 2. 禁止复述或总结用户需求；禁止空话、套话、车轱辘话凑字数——字数宁短勿水，严格卡在格式要求范围内。
 3. 站在服务市场/商家面向酒店客户的角度展开（除非用户明确要求酒店视角）。
 4. 若用户给出已有文案或细节要求（调整细节、强调IP、强调功能、强调价格），先理解原意再改写，不丢失关键信息。
-5. 内部数字写成参考值，不编造平台规则；避免“值得注意的是”“综上所述”“在这个…的时代”等AI腔。"""
+5. 内部数字写成参考值，不编造平台规则；避免“值得注意的是”“综上所述”“在这个…的时代”等AI腔。
+{compare_rule}
+7. 涉及具体价格、销量、优惠券时，标注“参考价/参考销量”，并提示以服务市场页面为准。"""
     return chat(
         prompt,
         system="你是Trip MALL携程酒店服务市场的首席内容官，擅长把营销信息写成有人味的内容。",
