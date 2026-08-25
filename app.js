@@ -873,6 +873,21 @@ function pasteLark() {
   status.textContent = `飞书内容库：已入库「${name}」（约 ${Math.round(text.length / 100) / 10} 千字），生成时自动参考。`;
 }
 
+async function readClipboardLark() {
+  const status = $('larkStatus');
+  try {
+    const text = await navigator.clipboard.readText();
+    if (!text || !text.trim()) {
+      status.textContent = '飞书内容库：剪贴板是空的，请先在飞书文档里 Ctrl+A / Ctrl+C 复制正文。';
+      return;
+    }
+    $('larkPasteText').value = text.trim().slice(0, 30000);
+    status.textContent = '飞书内容库：已从剪贴板读取，确认无误后点「入库并应用」。';
+  } catch (error) {
+    status.textContent = '飞书内容库：浏览器不允许直接读剪贴板，请在输入框里 Ctrl+V 粘贴。';
+  }
+}
+
 function larkRelevant(query, maxChars = 900, maxDocs = 1) {
   const docs = Array.isArray(knowledge.lark_docs) ? knowledge.lark_docs : [];
   if (!docs.length) return '';
@@ -892,6 +907,7 @@ function larkRelevant(query, maxChars = 900, maxDocs = 1) {
 }
 
 if ($('larkPasteBtn')) $('larkPasteBtn').onclick = pasteLark;
+if ($('larkPasteClip')) $('larkPasteClip').onclick = readClipboardLark;
 
 loadKnowledge();
 initLark();

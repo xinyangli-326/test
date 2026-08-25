@@ -50,12 +50,18 @@
     <details class="lark-paste">
       <summary>📋 手动同步飞书内容（文档未公开时用：打开飞书文档 → 全选复制正文 → 粘贴入库）</summary>
       <div class="lark-paste-box">
+        <ol class="lark-steps">
+          <li>在已登录飞书的浏览器里打开文档，<b>Ctrl+A</b> 全选 → <b>Ctrl+C</b> 复制正文</li>
+          <li>回到本页，点「从剪贴板读取」或直接 Ctrl+V 粘贴到下面输入框</li>
+          <li>点「入库并应用」，之后生成文案 / 海报 / 视频都会自动参考这批数据</li>
+        </ol>
         <textarea id="larkPasteText" rows="5" placeholder="粘贴飞书文档正文，系统会自动把内容并入知识库，后续文案/海报/视频生成都会参考这批数据…"></textarea>
         <div class="lark-paste-row">
           <input id="larkPasteName" placeholder="文档名称（如：产品类内容库）">
+          <button id="larkPasteClip" type="button">📋 从剪贴板读取</button>
           <button id="larkPasteBtn" type="button">📥 入库并应用</button>
         </div>
-        <span class="hint">入库内容会保存在本机浏览器并立即用于生成；同一个文档名称再次粘贴会覆盖旧内容。</span>
+        <span class="hint">入库内容会保存在本机浏览器并立即用于生成；同一个文档名称再次粘贴会覆盖旧内容。如果公司管理员能开通飞书开放平台应用（云文档只读权限），即可去掉手动步骤、全自动同步。</span>
       </div>
     </details>
     <div id="categories" class="categories"></div>
