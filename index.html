@@ -4,15 +4,18 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Trip MALL 营销知识库</title>
-<link rel="stylesheet" href="styles.css?v=zbuild1">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<link rel="stylesheet" href="styles.css?v=zbuild15">
 </head>
 <body>
 <nav id="nav">
-  <img src="assets/trip-mall-logo-transparent.png?v=zbuild1" alt="Trip MALL">
+  <img src="assets/trip-mall-logo-transparent.png?v=zbuild15" alt="Trip MALL">
   <div>
     <a href="#kb">知识库</a>
-    <a href="#create">内容生成</a>
-    <a href="#poster">海报编辑器</a>
+    <a href="#create">文案生成</a>
+    <a href="#poster">海报生成</a>
     <a target="_blank" rel="noopener" href="https://ebooking.ctrip.com/hmall/index">服务市场主页 ↗</a>
   </div>
 </nav>
@@ -22,9 +25,12 @@
     <p>TRIP MALL CONTENT STUDIO</p>
     <h1>携程酒店服务市场<br><em>营销知识与视觉中台</em></h1>
     <span>把产品、平台、支付、活动与运营干货，转化成酒店人愿意看、愿意信、愿意行动的内容。</span>
-    <a href="#create">开始创作</a>
+    <div class="hero-ctas">
+      <a href="#create">文案生成</a>
+      <a class="alt" href="#poster">海报生成</a>
+    </div>
   </div>
-  <img class="hero-img" src="assets/trip-mall-logo-transparent.png?v=zbuild1" alt="">
+  <img class="hero-img" src="assets/trip-mall-logo-transparent.png?v=zbuild15" alt="">
 </header>
 
 <div class="ticker" aria-hidden="true"><div class="ticker-track" id="tickerTrack"></div></div>
@@ -40,10 +46,11 @@
 
   <section id="create" class="panel reveal">
     <div class="head">
-      <div><small>CONTENT GENERATOR</small><h2>多视角内容生成</h2></div>
+      <div><small>COPY GENERATOR</small><h2>文案生成</h2></div>
       <div class="aiActions">
         <button id="aiLogin">登录公共AI</button>
         <button id="research">联网研究</button>
+        <button id="aiSettings">AI 设置</button>
         <span id="aiStatus">公网AI：未连接</span>
       </div>
     </div>
@@ -69,172 +76,132 @@
         </select>
         <label>内容类型</label>
         <select id="contentType"></select>
-        <label>补充信息</label>
-        <textarea id="extra" rows="3"></textarea>
+        <label>生成需求（个性化要求）</label>
+        <textarea id="needs" rows="2" placeholder="输入个性化需求，如：基于已有文案调整细节、突出IP、强调功能卖点…"></textarea>
       </div>
     </div>
 
-    <div class="block">
-      <label>生成需求（个性化，可点选快速标签或自行输入）</label>
-      <div class="chips" id="needChips">
-        <button type="button" data-tag="调整已有文案细节">调整已有文案细节</button>
-        <button type="button" data-tag="强调IP">强调IP</button>
-        <button type="button" data-tag="强调功能">强调功能</button>
-        <button type="button" data-tag="强调价格优惠">强调价格优惠</button>
-        <button type="button" data-tag="语气更活泼">语气更活泼</button>
-        <button type="button" data-tag="更正式专业">更正式专业</button>
-        <button type="button" data-tag="内容更简短">内容更简短</button>
-        <button type="button" data-tag="增加数据支撑">增加数据支撑</button>
-      </div>
-      <textarea id="needs" rows="2" placeholder="输入个性化需求，如：基于已有文案调整细节、突出IP、强调功能卖点…"></textarea>
-    </div>
-
-    <details class="learn" open>
-      <summary>文案学习：上传文案 / PPT / 链接，AI提炼风格画像（之后只需简短提示即可生成配套物料）</summary>
+    <div class="learn-upload">
+      <label>上传学习素材（可选，自动学习你的风格；支持文件或链接）</label>
       <div class="learn-tools">
         <input id="learnFile" type="file" accept=".txt,.md,.docx,.pptx,.pdf,.html">
         <button id="learnFileBtn" type="button">解析文件</button>
         <input id="learnUrl" type="url" placeholder="粘贴外部链接，如公众号文章、行业报告">
         <button id="learnUrlBtn" type="button">解析链接</button>
       </div>
+      <span class="hint" id="learnCount">已学习 0 份素材</span>
+    </div>
+
+    <details class="learn" open>
+      <summary>学习素材与风格样本（可手动粘贴文章）</summary>
       <div id="learnList" class="learn-list"></div>
       <div class="learn-actions">
-        <button id="learnProfile" class="primary" type="button">AI学习：生成风格画像</button>
         <button id="learnReset" type="button">清空素材与画像</button>
       </div>
-      <label>风格画像（AI学习总结，可手动微调）</label>
-      <textarea id="profileBox" rows="4" placeholder="AI将从你的素材中提炼语气、句式、结构、高频表达等画像，生成时会自动遵循…"></textarea>
       <label>手动粘贴文章风格样本</label>
       <textarea id="samples" rows="5" placeholder="粘贴公众号文章正文，或点击联网研究后自动填入"></textarea>
+      <textarea id="profileBox" rows="4" hidden placeholder="风格画像（系统自动记忆）"></textarea>
     </details>
 
-    <button id="generate" class="primary">生成具体内容 →</button>
+    <div class="gen-row">
+      <button id="generate" class="primary">生成具体内容 →</button>
+      <button id="copyHistoryBtn" type="button">📜 历史记录</button>
+    </div>
+    <div class="progress" id="copyProgress" hidden>
+      <div class="prog-head">
+        <span class="prog-label">AI 生成中，请稍候…</span>
+        <span class="prog-pct" id="copyProgressPct">1%</span>
+      </div>
+      <div class="prog-track"><div class="prog-fill" id="copyProgressFill"></div></div>
+    </div>
     <div id="result"></div>
   </section>
 
   <section id="poster" class="panel reveal">
     <div class="head">
-      <div><small>FREE POSTER EDITOR</small><h2>自由海报与贴纸编辑器</h2></div>
-      <span>无限贴纸 · 拖动 · 缩放 · 旋转 · 素材一键删除</span>
+      <div><small>POSTER GENERATOR</small><h2>海报生成</h2></div>
+      <span>一键生成 · AI 编辑 · 尺寸自由调整</span>
     </div>
     <div class="editor">
-      <aside>
-        <label>底图方式</label>
-        <div class="seg" id="bgMode">
-          <button type="button" data-mode="ai" class="on">AI生成</button>
-          <button type="button" data-mode="upload">上传底图</button>
-          <button type="button" data-mode="template">模板库</button>
-        </div>
-        <div id="bgAi" class="bg-box">
-          <label>底图风格</label>
-          <select id="posterStyle">
-            <option>香槟金轻奢</option>
-            <option>橙黑促销</option>
-            <option>卡通萌趣</option>
-            <option>数据案例</option>
-            <option>清新简约</option>
-            <option>国潮中式</option>
-            <option>自然旅居</option>
-          </select>
-          <label>底图描述（可选，自己写文字让AI生成）</label>
-          <textarea id="bgDesc" rows="2" placeholder="如：暖金色灯光的大堂、沙发上的宠物窝、落地窗外的城市夜景…"></textarea>
-          <button id="aiBg" type="button">AI生成底图</button>
-        </div>
-        <div id="bgUpload" class="bg-box" hidden>
-          <input id="bgFile" type="file" accept="image/*">
-          <div class="row">
-            <button id="useBg" type="button">用作底图</button>
-            <button id="removeBg" type="button">移除底图</button>
+      <div class="poster-nav" id="posterNav">
+        <button type="button" data-view="gen" class="on">🪄 一键生成</button>
+        <button type="button" data-view="edit">✏️ AI 编辑</button>
+        <button type="button" data-view="size">📐 调整尺寸</button>
+        <button type="button" id="posterHistoryBtn">📜 历史记录</button>
+      </div>
+      <div class="poster-main">
+        <div class="poster-stage">
+          <canvas id="c" width="1080" height="1920"></canvas>
+          <div class="stage-bar">
+            <button id="download" class="primary" type="button">下载海报 PNG</button>
           </div>
-          <div id="bgPreview" class="bg-preview"></div>
         </div>
-        <div id="bgTemplate" class="bg-box" hidden>
-          <div class="tpl-wrap">
-            <button id="tplPrev" type="button" aria-label="上一组">‹</button>
-            <div class="tpl-row" id="tplRow"></div>
-            <button id="tplNext" type="button" aria-label="下一组">›</button>
+        <div class="views">
+          <div class="view" data-view="gen">
+            <div class="ai-poster-box">
+              <b>🪄 AI 成品海报</b>
+              <div class="ctl"><label>参考海报（可选，上传后 AI 照着它的风格生成）</label>
+                <input id="aiPosterRef" type="file" accept="image/*"></div>
+              <div class="ctl"><label>指令（一句话描述你要的海报）</label>
+                <textarea id="aiPosterCmd" rows="3" placeholder="例如：宠物友好房上新海报，香槟金轻奢风，标题「宠物友好房上新」，卖点：设计+物资+运营一站式，底部CTA：登录服务市场了解详情"></textarea></div>
+              <div class="ctl"><label>风格（可留空，跟随指令）</label>
+                <select id="aiPosterStyle">
+                  <option value="">跟随指令</option>
+                  <option>香槟金轻奢</option>
+                  <option>橙黑促销</option>
+                  <option>清新简约</option>
+                  <option>国潮中式</option>
+                  <option>自然旅居</option>
+                </select></div>
+              <button id="aiPosterBtn" class="primary" type="button">🪄 AI 生成成品海报</button>
+              <div id="aiPosterStatus"></div>
+              <div class="progress" id="aiPosterProgress" hidden>
+                <div class="prog-head">
+                  <span class="prog-label">AI 正在绘制海报…</span>
+                  <span class="prog-pct" id="aiPosterProgressPct">1%</span>
+                </div>
+                <div class="prog-track"><div class="prog-fill" id="aiPosterProgressFill"></div></div>
+              </div>
+              <p class="hint">成品海报 = 底图 + 中文文案 + 排版一步到位。推荐在 AI 设置里把图片服务商设为「阿里云百炼」或「千问AI平台 Token Plan（月付套餐）」，图片模型填 qwen-image-3.0-pro（月付套餐 Key 以 sk-sp- 开头，域名自动走 token-plan）。</p>
+            </div>
           </div>
-          <p>滑动或点击模板卡，直接套用版式与文案。</p>
-        </div>
 
-        <div class="block">
-          <label>海报AI学习：上传类似海报，AI学习风格后生成同款</label>
-          <input id="refPoster" type="file" accept="image/*">
-          <button id="learnPoster" type="button">AI学习并生成类似海报</button>
-          <div id="posterLearnStatus"></div>
-        </div>
+          <div class="view" data-view="edit" hidden>
+            <div class="ai-poster-box">
+              <b>✏️ 编辑 AI 海报</b>
+              <div class="ctl"><label>编辑指令（针对当前画布海报修改）</label>
+                <textarea id="aiEditCmd" rows="2" placeholder="例如：把标题改成「宠物友好房新品上市」，整体换成橙色促销风，CTA 改成「立即了解」"></textarea></div>
+              <button id="aiEditBtn" class="primary" type="button">✏️ 按指令编辑当前海报</button>
+              <div id="aiEditStatus"></div>
+              <div class="progress" id="aiEditProgress" hidden>
+                <div class="prog-head">
+                  <span class="prog-label">AI 正在修改海报…</span>
+                  <span class="prog-pct" id="aiEditProgressPct">1%</span>
+                </div>
+                <div class="prog-track"><div class="prog-fill" id="aiEditProgressFill"></div></div>
+              </div>
+              <p class="hint">编辑会把当前海报作为参考图进行修改，需要图片服务商为「阿里云百炼」或「千问AI平台 Token Plan（月付套餐）」（图片模型填 qwen-image-3.0 / qwen-image-3.0-pro，原生支持参考图编辑）。</p>
+            </div>
+          </div>
 
-        <label>海报营销目标</label>
-        <select id="posterGoal">
-          <option>产品招商</option>
-          <option>酒店获客</option>
-          <option>活动促销</option>
-          <option>知识科普</option>
-          <option>案例宣传</option>
-        </select>
-        <button id="generatePosterCopy" type="button">生成海报文案并自动排版</button>
-        <div id="posterCopyStatus"></div>
-
-        <div class="row">
-          <button id="undo" type="button">撤销</button>
-          <button id="redo" type="button">重做</button>
-        </div>
-        <div class="row">
-          <button id="saveDraft" type="button">存为草稿</button>
-          <button id="openDrafts" type="button">我的草稿(<span id="draftCount">0</span>)</button>
-        </div>
-
-        <label>添加文本</label>
-        <input id="newText" value="携程宠物房">
-        <button id="addText" type="button">添加文本层</button>
-
-        <label>贴纸风格</label>
-        <select id="stickerStyle">
-          <option>卡通萌趣</option>
-          <option>写实风</option>
-          <option>简洁风</option>
-          <option>3D立体</option>
-          <option>国潮插画</option>
-          <option>手绘涂鸦</option>
-          <option>扁平极简</option>
-        </select>
-        <label>生成原创贴纸</label>
-        <input id="stickerPrompt" value="卡通橘猫，开心招手">
-        <button id="addSticker" type="button">AI生成贴纸</button>
-
-        <label>上传授权IP/图片</label>
-        <input id="upload" type="file" accept="image/*">
-
-        <hr>
-        <b>选中元素设置</b>
-        <label>字体</label>
-        <select id="font">
-          <option>Microsoft YaHei</option>
-          <option>SimHei</option>
-          <option>SimSun</option>
-          <option>KaiTi</option>
-          <option>Georgia</option>
-        </select>
-        <label>字号 / 缩放</label>
-        <input id="size" type="range" min="20" max="180" value="72">
-        <label>旋转</label>
-        <input id="rotate" type="range" min="-180" max="180" value="0">
-        <label>颜色</label>
-        <input id="color" type="color" value="#8c6846">
-        <div class="row">
-          <button id="front" type="button">置顶</button>
-          <button id="delete" type="button">删除选中</button>
-        </div>
-
-        <label class="check"><input id="watermark" type="checkbox" checked> 添加“携程酒店服务市场”水印</label>
-        <button id="download" class="primary">下载海报PNG</button>
-        <p>小黄人、蛋仔派对等商业IP请上传已授权透明PNG，系统不会自动仿制。</p>
-      </aside>
-      <div class="right">
-        <div class="canvas"><canvas id="c" width="1080" height="1920"></canvas></div>
-        <div class="layers">
-          <b>画布素材（点击 × 直接删除，点击列表可选中）</b>
-          <div id="layerList" class="layer-list"></div>
+          <div class="view" data-view="size" hidden>
+            <div class="ai-poster-box">
+              <b>📐 自定义海报尺寸</b>
+              <div class="row">
+                <div class="ctl"><label>宽度（px）</label><input id="posterWidth" type="number" min="200" max="4096" step="10" value="1080"></div>
+                <div class="ctl"><label>高度（px）</label><input id="posterHeight" type="number" min="200" max="4096" step="10" value="1920"></div>
+              </div>
+              <div class="chips" id="sizePresets">
+                <button type="button" data-w="1080" data-h="1920">竖版 9:16</button>
+                <button type="button" data-w="1080" data-h="1350">竖版 4:5</button>
+                <button type="button" data-w="1080" data-h="1080">方图 1:1</button>
+                <button type="button" data-w="1920" data-h="1080">横版 16:9</button>
+              </div>
+              <button id="applySize" class="primary" type="button">应用尺寸</button>
+              <div id="sizeStatus"></div>
+              <p class="hint">画布不会锁死：宽高可自由填写（200–4096px）。改尺寸后已有内容会等比重排；新生成的海报会按当前比例出图（分辨率由模型自动推荐，更稳），下载按当前画布尺寸输出。</p>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -242,8 +209,8 @@
 </main>
 
 <footer>
-  <img src="assets/trip-mall-logo-transparent.png?v=zbuild1" alt="">
-  <span>携程酒店服务市场营销知识库 · AI fallback powered by Puter</span>
+  <img src="assets/trip-mall-logo-transparent.png?v=zbuild15" alt="">
+  <span>携程酒店服务市场营销知识库 · AI fallback powered by Puter · V6（2026-08-23）</span>
 </footer>
 
 <div id="draftModal" class="modal" hidden>
@@ -257,8 +224,97 @@
   </div>
 </div>
 
-<script src="vendor/puter.js?v=zbuild1"></script>
-<script src="config.js?v=zbuild1"></script>
-<script src="app.js?v=zbuild1"></script>
+<div id="historyModal" class="modal" hidden>
+  <div class="modal-box history-box">
+    <div class="history-modal-head">
+      <h3 id="historyTitle">历史记录</h3>
+      <button id="historyClose" class="x" type="button" title="关闭">✕</button>
+    </div>
+    <p class="hint" id="historyHint"></p>
+    <div id="historyList" class="history-list"></div>
+  </div>
+</div>
+
+<div id="aiModal" class="modal" hidden>
+  <div class="modal-box">
+    <h3>AI 接入设置</h3>
+    <p class="hint">Puter 兜底引擎已开始收费。想要接近 Puter 的效果，请选一个大模型：推荐 DeepSeek（deepseek-chat）或硅基流动 DeepSeek-V3、阿里云百炼 qwen-max、Kimi、智谱 GLM-4-Plus（均按量计费、很便宜）。Key 只保存在你浏览器本地，不会上传到任何服务器。选好服务商后点「填入推荐模型」即可。</p>
+    <label>接入方式</label>
+    <select id="aiMode">
+      <option value="byok">自填 API Key（推荐）</option>
+      <option value="vercel">Vercel API（OpenAI，无需填 Key）</option>
+      <option value="puter">Puter 公共 AI</option>
+    </select>
+    <div id="byokFields">
+      <label>服务商</label>
+      <select id="aiProvider">
+        <option value="deepseek">DeepSeek（deepseek-chat）</option>
+        <option value="siliconflow">硅基流动 SiliconFlow</option>
+        <option value="zhipu">智谱 GLM</option>
+        <option value="moonshot">Kimi（月之暗面）</option>
+        <option value="dashscope">阿里云百炼（通义）</option>
+        <option value="qianwen">千问AI平台 Token Plan（月付套餐）</option>
+        <option value="openai">OpenAI</option>
+        <option value="custom">自定义（OpenAI 兼容）</option>
+      </select>
+      <label>API Key</label>
+      <input id="aiKey" type="password" placeholder="sk-..." autocomplete="off">
+      <label>模型（可修改）</label>
+      <select id="aiModel"></select>
+      <button id="aiModelSuggest" type="button">填入推荐模型（质量更好，按量计费）</button>
+      <label>接口地址（自定义服务商时使用）</label>
+      <input id="aiBaseUrl" placeholder="https://api.deepseek.com/v1">
+    </div>
+    <div id="imgFields">
+      <hr>
+      <b>图片生成（独立配置，海报底图/贴纸用）</b>
+      <label>图片服务商</label>
+      <select id="aiImageProvider">
+        <option value="">跟随文字服务商</option>
+        <option value="siliconflow">硅基流动（FLUX 等）</option>
+        <option value="dashscope">阿里云百炼（Qwen-Image 3.0，支持参考图编辑）</option>
+        <option value="qianwen">千问AI平台 Token Plan（月付套餐）</option>
+        <option value="zhipu">智谱 CogView</option>
+        <option value="openai">OpenAI（gpt-image-1）</option>
+        <option value="custom">自定义</option>
+      </select>
+      <label>图片 API Key（百炼填 sk- 开头；Token Plan 填 sk-sp- 开头专属 Key）</label>
+      <input id="aiImageKey" type="password" placeholder="sk-sp-...（Token Plan）/ sk-...（百炼）" autocomplete="off">
+      <label>图片模型</label>
+      <div class="row" style="grid-template-columns:1fr auto">
+        <input id="aiImageModel" list="imageModelList" placeholder="如 qwen-image-3.0-pro（百炼）/ black-forest-labs/FLUX.1-schnell（硅基）">
+        <button id="aiImageModelSuggest" type="button">填入推荐模型</button>
+      </div>
+      <datalist id="imageModelList">
+        <option value="qwen-image-3.0-pro"></option>
+        <option value="qwen-image-3.0"></option>
+        <option value="qwen-image-edit"></option>
+        <option value="qwen-image-2.0-pro"></option>
+        <option value="qwen-image-2.0"></option>
+        <option value="wan2.7-image"></option>
+        <option value="black-forest-labs/FLUX.1-schnell"></option>
+        <option value="black-forest-labs/FLUX.1-dev"></option>
+        <option value="cogview-4-250304"></option>
+        <option value="gpt-image-1"></option>
+      </datalist>
+      <label>图片接口地址（Token Plan 选月付套餐后会自动填，一般不用改）</label>
+      <input id="aiImageBaseUrl" placeholder="https://token-plan.cn-beijing.maas.aliyuncs.com">
+      <button id="aiImgTest" type="button">测试图片生成</button>
+      <p class="hint">阿里月付套餐（Token Plan）配置：图片服务商选「千问AI平台 Token Plan（月付套餐）」，图片 API Key 填 Token Plan 页面里的专属 Key（sk-sp- 开头，创建时只显示一次），图片接口地址默认自动填 https://token-plan.cn-beijing.maas.aliyuncs.com（域名必须含 token-plan，不能填 dashscope）。重要：Token Plan 接口**未开放浏览器跨域**（官方只给服务端工具用），生图/文字会自动走网站自带的中转接口（test-xinyang.vercel.app）——中转后端需已部署且当前网络能访问；若中转不可达，会提示改用「阿里云百炼」（按量，浏览器可直连）或硅基流动。模型 qwen-image-3.0-pro 在套餐内（个人版/团队版都支持），文生图和参考图改图都可用；若报 403 说明该模型不在你的套餐版本，可换 qwen-image-2.0-pro / wan2.7-image。百炼按量用户则选「阿里云百炼」填 sk- 开头 Key；业务空间专属 Key 需在图片接口地址填 {WorkspaceId}.cn-beijing.maas.aliyuncs.com。</p>
+    </div>
+    <div class="row">
+      <button id="aiTest" type="button">测试连接</button>
+      <button id="aiSave" class="primary" type="button">保存</button>
+      <button id="aiClear" type="button">清除</button>
+      <button id="kbRefresh" type="button">刷新知识库</button>
+    </div>
+    <div id="aiTestStatus"></div>
+    <button id="aiClose" type="button">关闭</button>
+  </div>
+</div>
+
+<script src="vendor/puter.js?v=zbuild15"></script>
+<script src="config.js?v=zbuild15"></script>
+<script src="app.js?v=zbuild15"></script>
 </body>
 </html>
