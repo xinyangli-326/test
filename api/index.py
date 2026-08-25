@@ -28,6 +28,7 @@ def cors_headers(environ):
 def route(environ):
     path = urlparse(environ.get("PATH_INFO", "")).path
     method = environ.get("REQUEST_METHOD", "GET")
+    origin = environ.get("HTTP_ORIGIN", "")
     if method == "OPTIONS":
         return 204, None
     if method == "GET" and path.endswith("/api/health"):
@@ -35,6 +36,10 @@ def route(environ):
     if method == "GET" and path.endswith("/api/knowledge"):
         return 200, app_core.KB
     if method == "POST":
+        # 安全：中转接口只接受白名单来源（浏览器 CORS 之外的直接调用一律拒绝），
+        # 防止中转被第三方滥用/探测
+        if origin not in ALLOWED_ORIGINS:
+            return 403, {"error": "forbidden origin"}
         try:
             length = int(environ.get("CONTENT_LENGTH") or 0)
             raw = environ["wsgi.input"].read(length) if length else b"{}"

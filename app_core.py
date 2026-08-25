@@ -64,6 +64,10 @@ def _token_plan_error(resp, label):
             text = f"{code} {message}".strip()
     except Exception:
         pass
+    # 脱敏：抹掉错误信息里可能回显的 Key 片段
+    import re as _re
+    text = _re.sub(r"\b(sk-[A-Za-z0-9_-]{12,}|sk-sp-[A-Za-z0-9_-]{12,}|sk-ws-[A-Za-z0-9_-]{12,}|LTAI[A-Za-z0-9]{16,})\b",
+                   lambda m: m.group(1)[:4] + "…" + m.group(1)[-4:], text)
     hint = ""
     if resp.status_code == 401:
         hint = (

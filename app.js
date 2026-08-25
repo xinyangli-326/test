@@ -4,6 +4,27 @@ const missingEl = new Proxy(function () {}, {
   apply: () => missingEl
 });
 const $ = id => document.getElementById(id) || missingEl;
+// 脱敏：从任意文本中抹掉 API Key / 令牌片段，避免错误信息回显 Key
+function maskSecrets(text, extraKeys = []) {
+  let out = String(text || '');
+  const collect = [];
+  try { collect.push(...Object.values(getAIConfig() || {})); } catch {}
+  try { collect.push(...Object.values(getImageConfig() || {})); } catch {}
+  collect.push(...extraKeys);
+  const candidates = collect
+    .filter(v => typeof v === 'string' && v.length >= 12 && /[A-Za-z0-9_-]/.test(v))
+    .map(v => v.trim())
+    .filter(Boolean);
+  for (const key of candidates) {
+    try {
+      const esc = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      out = out.replace(new RegExp(esc, 'g'), key.slice(0, 4) + '…' + key.slice(-4));
+    } catch {}
+  }
+  out = out.replace(/\b(sk-[A-Za-z0-9_-]{12,}|sk-sp-[A-Za-z0-9_-]{12,}|sk-ws-[A-Za-z0-9_-]{12,}|LTAI[A-Za-z0-9]{16,})\b/g,
+    m => m.slice(0, 4) + '…' + m.slice(-4));
+  return out;
+}
 const API_BASE = (window.TRIP_MALL_CONFIG?.API_BASE || '').replace(/\/$/, '');
 const apiUrl = path => API_BASE + path;
 
@@ -196,7 +217,7 @@ async function openAILikeChat(system, user, { maxTokens = 3000, temperature = 0.
   });
   if (!response.ok) {
     const text = await response.text().catch(() => '');
-    throw new Error(`AI接口错误（${response.status}）：${String(text).slice(0, 160)}`);
+    throw new Error(`AI接口错误（${response.status}）：${maskSecrets(String(text).slice(0, 200), [cfg.apiKey])}`);
   }
   const data = await response.json();
   const content = data.choices?.[0]?.message?.content;
@@ -327,7 +348,7 @@ async function dashscopeImage(prompt, { aspect = 'square', reference = null, siz
   if (!response.ok) {
     const text = await response.text().catch(() => '');
     const maskedKey = img.key ? `${img.key.slice(0, 6)}…${img.key.slice(-4)}` : '未填写';
-    throw new Error(`${providerLabel}图片接口错误（${response.status}）：${dashErrorText(text, { provider: img.provider })}（当前使用的图片 Key：${maskedKey}）`);
+    throw new Error(`${providerLabel}图片接口错误（${response.status}）：${maskSecrets(dashErrorText(text, { provider: img.provider }), [img.key])}（当前使用的图片 Key：${maskedKey}）`);
   }
   const data = await response.json();
   const out = data.output || {};
@@ -434,7 +455,7 @@ async function openAILikeImage(prompt, { aspect = 'square', reference = null, si
   });
   if (!response.ok) {
     const text = await response.text().catch(() => '');
-    throw new Error(`图片接口错误（${response.status}）：${String(text).slice(0, 160)}`);
+    throw new Error(`图片接口错误（${response.status}）：${maskSecrets(String(text).slice(0, 200), [img.key])}`);
   }
   const data = await response.json();
   const item = data.data?.[0];
@@ -697,9 +718,9 @@ function renderCategoryCards() {
   $('categories').innerHTML = Object.values(knowledge.categories).map((value, index) => {
     const topics = Array.isArray(value.topics) ? value.topics : Object.keys(value.topics || {});
     return `<article class="cat reveal" style="transition-delay:${index * 70}ms">
-      <b>${value.name}</b>
-      <p>${value.description || '持续沉淀酒店行业可复用内容。'}</p>
-      <ul>${topics.slice(0, 5).map(topic => `<li>${topic}</li>`).join('')}</ul>
+      <b>${escapeHtml(value.name)}</b>
+      <p>${escapeHtml(value.description || '持续沉淀酒店行业可复用内容。')}</p>
+      <ul>${topics.slice(0, 5).map(topic => `<li>${escapeHtml(topic)}</li>`).join('')}</ul>
     </article>`;
   }).join('');
   observeReveal();
