@@ -126,7 +126,6 @@
       <div class="poster-nav" id="posterNav">
         <button type="button" data-view="gen" class="on">🪄 一键生成</button>
         <button type="button" data-view="edit">✏️ AI 编辑</button>
-        <button type="button" data-view="assets">🧩 素材编辑</button>
         <button type="button" data-view="size">📐 调整尺寸</button>
         <button type="button" id="posterHistoryBtn">📜 历史记录</button>
       </div>
@@ -141,8 +140,10 @@
           <div class="view" data-view="gen">
             <div class="ai-poster-box">
               <b>🪄 AI 成品海报</b>
-              <div class="ctl"><label>参考海报（可选，上传后 AI 照着它的风格生成）</label>
-                <input id="aiPosterRef" type="file" accept="image/*"></div>
+              <div class="ctl"><label>素材图片（可选，可多选：产品图/对比表截图/科普示意图，AI 会参考并自动排版进海报）</label>
+                <input id="aiPosterRef" type="file" accept="image/*" multiple></div>
+              <div class="ctl"><label>补充文字内容（可选，AI 会自动排版进海报；支持换行，适合放科普要点/数据/结论）</label>
+                <textarea id="aiPosterText" rows="3" placeholder="例如：什么是服务市场？——酒店B2B一站式采购平台；覆盖5大品类、6.9万+商品；官方6大保障：免房置换/低价保证/送货到店/快速开票/先行赔付/7天无理由退货"></textarea></div>
               <div class="ctl"><label>指令（一句话描述你要的海报）</label>
                 <textarea id="aiPosterCmd" rows="3" placeholder="例如：宠物友好房上新海报，香槟金轻奢风，标题「宠物友好房上新」，卖点：设计+物资+运营一站式，底部CTA：登录服务市场了解详情"></textarea></div>
               <div class="ctl"><label>风格（可留空，跟随指令）</label>
@@ -182,35 +183,6 @@
                 <div class="prog-track"><div class="prog-fill" id="aiEditProgressFill"></div></div>
               </div>
               <p class="hint">编辑会把当前海报作为参考图进行修改，需要图片服务商为「阿里云百炼」或「千问AI平台 Token Plan（月付套餐）」（图片模型填 qwen-image-3.0 / qwen-image-3.0-pro，原生支持参考图编辑）。</p>
-            </div>
-          </div>
-
-          <div class="view" data-view="assets" hidden>
-            <div class="ai-poster-box">
-              <b>🧩 素材编辑（科普/对比内容排版）</b>
-              <div class="ctl"><label>上传图片素材（可多选，加到画布后可拖动、缩放、删除）</label>
-                <input id="assetImages" type="file" accept="image/*" multiple></div>
-              <button id="addAssetImages" class="primary" type="button">🖼️ 上传图片到海报</button>
-              <hr>
-              <div class="ctl"><label>添加文字（支持换行，例如科普标题/说明/结论）</label>
-                <textarea id="assetText" rows="3" placeholder="输入要展示的文字，如：携程服务市场 = 酒店B2B一站式采购平台"></textarea></div>
-              <div class="row">
-                <div class="ctl"><label>字号</label><input id="assetTextSize" type="number" min="16" max="400" step="2" value="72"></div>
-                <div class="ctl"><label>颜色</label><input id="assetTextColor" type="color" value="#29231e"></div>
-              </div>
-              <button id="addAssetText" class="primary" type="button">➕ 添加文字到海报</button>
-              <hr>
-              <b>图层（点击选中，拖动调整位置）</b>
-              <div id="layerList" class="layer-list"></div>
-              <div class="row">
-                <div class="ctl"><label>字号/缩放</label><input id="assetScale" type="range" min="10" max="300" value="100"></div>
-                <div class="ctl"><label>旋转</label><input id="assetRotate" type="range" min="-180" max="180" value="0"></div>
-              </div>
-              <div class="row">
-                <button id="assetDelete" class="alt" type="button">🗑️ 删除选中素材</button>
-                <button id="assetClear" class="alt" type="button">清空素材</button>
-              </div>
-              <p class="hint">技巧：双击文字可改内容；Delete 键删除选中素材；图片可上传产品图、对比表截图、科普示意图。素材会保留在当前画布，可继续用 AI 编辑或调整尺寸。</p>
             </div>
           </div>
 

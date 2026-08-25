@@ -1672,14 +1672,8 @@ function syncControls() {
     : Math.min(180, selected.scale * 100);
   const sizeEl = $('size');
   if (sizeEl && sizeEl.value !== undefined) sizeEl.value = sizeVal;
-  const assetScaleEl = $('assetScale');
-  if (assetScaleEl && assetScaleEl.value !== undefined) assetScaleEl.value = selected.type === 'text'
-    ? Math.min(300, selected.size)
-    : Math.min(300, selected.scale * 100);
   const rotateEl = $('rotate');
   if (rotateEl && rotateEl.value !== undefined) rotateEl.value = selected.rotation;
-  const assetRotateEl = $('assetRotate');
-  if (assetRotateEl && assetRotateEl.value !== undefined) assetRotateEl.value = selected.rotation;
   if (selected.color) $('color').value = selected.color;
   if (selected.font) $('font').value = selected.font;
 }
@@ -1770,74 +1764,6 @@ $('upload').onchange = event => loadImageFile(event.target.files[0], image => {
   });
   event.target.value = '';
 });
-
-/* ============================ 素材编辑：上传图片 / 添加文字（科普内容排版） ============================ */
-
-function addImageObjects(files) {
-  [...files].forEach((file, index) => {
-    if (!file.type.startsWith('image/')) return;
-    loadImageFile(file, image => {
-      const cols = Math.ceil(Math.sqrt([...files].filter(f => f.type.startsWith('image/')).length));
-      const gap = 60;
-      const boxW = Math.min(460, (canvas.width - gap * (cols + 1)) / cols);
-      const ratio = Math.min(boxW / image.width, boxW / image.height);
-      addObject({
-        type: 'image', image,
-        x: (index % cols + 0.5) * (canvas.width / cols),
-        y: 600 + Math.floor(index / cols) * (boxW + gap * 1.4),
-        width: image.width, height: image.height,
-        scale: ratio,
-        rotation: 0
-      });
-    });
-  });
-}
-
-$('addAssetImages').onclick = () => {
-  const input = $('assetImages');
-  const files = input.files;
-  if (!files || !files.length) return alert('先选择要上传的图片');
-  addImageObjects(files);
-  input.value = '';
-};
-
-$('addAssetText').onclick = () => {
-  const text = $('assetText').value.trim();
-  if (!text) return alert('先输入要添加的文字');
-  const size = Math.min(300, Math.max(16, +$('assetTextSize').value || 72));
-  const color = $('assetTextColor').value || smartTextColor();
-  // 支持多行：拆成多段文本对象纵向排列
-  const lines = text.split('\n').filter(l => l.trim());
-  if (lines.length <= 1) {
-    addText(text, 540, 600, size, color, 'Microsoft YaHei', 800);
-  } else {
-    const lineHeight = size * 1.35;
-    const startY = 400 + Math.max(0, (lines.length - 1) * lineHeight / 2);
-    lines.forEach((line, i) => addText(line, 540, startY + i * lineHeight, size, color, 'Microsoft YaHei', 800));
-  }
-};
-
-$('assetScale').oninput = event => {
-  if (!selected) return;
-  if (selected.type === 'text') selected.size = +event.target.value;
-  else selected.scale = +event.target.value / 100;
-  draw();
-};
-$('assetScale').onchange = () => { if (selected) snapshot(); };
-$('assetRotate').oninput = event => {
-  if (selected) { selected.rotation = +event.target.value; draw(); }
-};
-$('assetRotate').onchange = () => { if (selected) snapshot(); };
-$('assetDelete').onclick = deleteSelected;
-$('assetClear').onclick = () => {
-  if (!objects.length) return alert('画布没有素材');
-  if (!confirm('确认清空画布上的全部素材（保留底图）？')) return;
-  snapshot();
-  objects = [];
-  selected = null;
-  draw();
-  renderLayers();
-};
 
 /* 素材列表：点击 × 直接删除 */
 
@@ -2285,8 +2211,10 @@ if (posterNav) {
 $('aiPosterBtn').onclick = async event => {
   const button = event.currentTarget;
   const progress = startProgress('aiPosterProgress');
-  const file = $('aiPosterRef').files[0];
+  const files = $('aiPosterRef').files;
+  const assetFiles = files && files.length ? [...files].filter(f => f.type.startsWith('image/')) : [];
   const cmd = $('aiPosterCmd').value.trim();
+  const extraText = $('aiPosterText').value.trim();
   const style = $('aiPosterStyle').value;
   const product = $('product').value;
   const needs = $('needs').value.trim();
@@ -2299,10 +2227,16 @@ $('aiPosterBtn').onclick = async event => {
   const psize = posterSizeInfo();
   const gcd = (a, b) => (b ? gcd(b, a % b) : a);
   const ratioText = `${psize.w / gcd(psize.w, psize.h)}:${psize.h / gcd(psize.w, psize.h)}`;
+  const assetTextBlock = extraText
+    ? `\n需要展示在画面中的文字内容（由 AI 自动排版，务必全部准确呈现、不得遗漏或改写）：\n${extraText}`
+    : '';
+  const assetHint = assetFiles.length
+    ? `\n已提供 ${assetFiles.length} 张素材图片作为参考：请理解素材内容（产品图/对比表/示意图等），把素材以美观方式重新排版进海报（可裁剪、缩放、加圆角、配文字说明），不要直接照搬原图的文字排版。`
+    : '';
   const prompt = `请生成一张${psize.label}${ratioText}（画布 ${psize.w}×${psize.h}）的完整酒店营销海报成品图，图片内直接包含准确的中文文字（无错别字、无乱码）。
 主题：${product}。${styleText}
 用户指令（请严格执行）：${instruction}
-排版要求：标题醒目、卖点分条短句、信息层级清晰、高级商业广告质感${ctaHint}。${paletteText}`;
+排版要求：标题醒目、卖点分条短句、信息层级清晰、高级商业广告质感${ctaHint}。${paletteText}${assetTextBlock}${assetHint}`;
   const aspectKey = psize.ratio > 1.1 ? '16:9' : (psize.ratio < 0.9 ? '9:16' : 'square');
   const genOpts = { aspect: aspectKey, size: psize.api };
   button.textContent = 'AI生成中…';
@@ -2315,13 +2249,31 @@ $('aiPosterBtn').onclick = async event => {
     }
     let src;
     const imgCfg = getImageConfig();
-    if (file) {
-      const { dataUrl } = await resizeImageFile(file, 1024);
+    if (assetFiles.length) {
+      let reference = null;
       try {
-        src = await openAILikeImage(prompt, { ...genOpts, reference: dataUrl });
-      } catch (refError) {
+        reference = await Promise.race([
+          composeAssetGrid(assetFiles),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('素材处理超时')), 20000))
+        ]);
+      } catch (gridError) {
+        try {
+          const { dataUrl } = await resizeImageFile(assetFiles[0], 1024);
+          reference = dataUrl;
+        } catch {
+          reference = null;
+        }
+      }
+      if (reference) {
+        try {
+          src = await openAILikeImage(prompt, { ...genOpts, reference });
+        } catch (refError) {
+          src = await openAILikeImage(prompt, genOpts);
+          $('aiPosterStatus').textContent = `参考图编辑不可用（${refError.message}），已改用文字指令生成。`;
+        }
+      } else {
         src = await openAILikeImage(prompt, genOpts);
-        $('aiPosterStatus').textContent = `参考图编辑不可用（${refError.message}），已改用文字指令生成。`;
+        $('aiPosterStatus').textContent = '素材图片读取失败，已改用纯文字指令生成。';
       }
     } else {
       src = await openAILikeImage(prompt, genOpts);
@@ -2341,13 +2293,13 @@ $('aiPosterBtn').onclick = async event => {
       instruction,
       prompt,
       style: style || '跟随指令',
-      engine: `${imgCfg.model}${(imgCfg.provider === 'dashscope' || imgCfg.provider === 'qianwen') && file ? '·参考图编辑' : ''}`,
+      engine: `${imgCfg.model}${(imgCfg.provider === 'dashscope' || imgCfg.provider === 'qianwen') && assetFiles.length ? '·素材参考编辑' : ''}`,
       width: canvas.width,
       height: canvas.height,
       image: await posterHistoryImage(src)
     });
     progress.done();
-    $('aiPosterStatus').textContent = `成品海报已生成（引擎：${imgCfg.model}${(imgCfg.provider === 'dashscope' || imgCfg.provider === 'qianwen') && file ? '·参考图编辑' : ''}）。画布已更新为成品海报，可直接下载或微调。`;
+    $('aiPosterStatus').textContent = `成品海报已生成（引擎：${imgCfg.model}${(imgCfg.provider === 'dashscope' || imgCfg.provider === 'qianwen') && assetFiles.length ? '·素材参考编辑' : ''}）。画布已更新为成品海报，可直接下载或微调。`;
   } catch (error) {
     $('aiPosterStatus').textContent = `生成失败：${error.message}`;
     progress.fail();
@@ -2509,6 +2461,41 @@ function resizeImageFile(file, maxSide) {
       resolve({ dataUrl: temp.toDataURL(mime, 0.9), mime });
     });
   });
+}
+
+// 把多张素材图拼成一张网格参考图（2列网格），作为 AI 排版海报的参考输入
+async function composeAssetGrid(files) {
+  const images = [];
+  for (const file of files.slice(0, 6)) {
+    const image = await new Promise((resolve, reject) => {
+      loadImageFile(file, resolve);
+      setTimeout(() => reject(new Error('图片读取超时')), 15000);
+    });
+    images.push(image);
+  }
+  if (!images.length) throw new Error('没有可用的素材图片');
+  const cols = Math.min(2, images.length);
+  const rows = Math.ceil(images.length / cols);
+  const cell = 640;
+  const gap = 12;
+  const pad = 12;
+  const canvas2 = document.createElement('canvas');
+  canvas2.width = pad * 2 + cols * cell + (cols - 1) * gap;
+  canvas2.height = pad * 2 + rows * cell + (rows - 1) * gap;
+  const g = canvas2.getContext('2d');
+  g.fillStyle = '#f4f1ec';
+  g.fillRect(0, 0, canvas2.width, canvas2.height);
+  images.forEach((image, index) => {
+    const col = index % cols;
+    const row = Math.floor(index / cols);
+    const x = pad + col * (cell + gap);
+    const y = pad + row * (cell + gap);
+    const ratio = Math.max(cell / image.width, cell / image.height);
+    const sw = cell / ratio;
+    const sh = cell / ratio;
+    g.drawImage(image, (image.width - sw) / 2, (image.height - sh) / 2, sw, sh, x, y, cell, cell);
+  });
+  return canvas2.toDataURL('image/jpeg', 0.92);
 }
 
 async function puterVision(file) {
