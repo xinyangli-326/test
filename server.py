@@ -52,6 +52,12 @@ class H(SimpleHTTPRequestHandler):
                 self.respond(200, app_core.poster_learn(payload))
             elif path.endswith("/api/poster-edit"):
                 self.respond(200, app_core.poster_edit(payload))
+            elif path.endswith("/api/token-plan-video-create"):
+                self.respond(200, app_core.token_plan_video_create(payload))
+            elif path.endswith("/api/token-plan-video-get"):
+                self.respond(200, app_core.token_plan_video_get(payload))
+            elif path.endswith("/api/token-plan-video-refs"):
+                self.respond(200, app_core.token_plan_video_refs(payload))
             elif path.endswith("/api/extract"):
                 self.respond(200, app_core.extract(payload))
             else:

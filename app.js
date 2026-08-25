@@ -165,9 +165,21 @@ function imageConfigError() {
   return '未配置图片生成：请先在「AI 设置」里把图片服务商设为阿里云百炼 / 千问AI平台 Token Plan（月付套餐）或智谱 CogView 并填写 Key。';
 }
 
-async function openAILikeChat(system, user, { maxTokens = 3000, temperature = 0.85 } = {}) {
+async function openAILikeChat(system, user, { maxTokens = 3000, temperature = 0.85, deep = false } = {}) {
   const cfg = getAIConfig();
   const provider = AI_PROVIDERS[cfg.provider] || AI_PROVIDERS.custom;
+  // 深度思考：优先切到带思考能力的模型
+  const deepModel = {
+    deepseek: 'deepseek-reasoner',
+    siliconflow: 'deepseek-ai/DeepSeek-R1',
+    dashscope: 'qwen3-max',
+    qianwen: 'qwen3.7-max',
+    zhipu: 'glm-4-plus',
+    moonshot: 'kimi-latest',
+    openai: 'gpt-4o'
+  }[cfg.provider] || '';
+  const effModel = deep && deepModel ? deepModel : (cfg.model || provider.model);
+  if (deep) maxTokens = Math.max(maxTokens, 8000);
   // Token Plan 接口未开放浏览器跨域，文本统一走服务端中转
   if (cfg.provider === 'qianwen') {
     if (!API_BASE) throw new Error('Token Plan 文本接口需要服务端中转，请在部署环境中使用（当前页面未配置 API_BASE）。');
@@ -181,7 +193,7 @@ async function openAILikeChat(system, user, { maxTokens = 3000, temperature = 0.
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           apiKey: cfg.apiKey,
-          model: cfg.model || provider.model,
+          model: effModel,
           messages,
           max_tokens: maxTokens,
           temperature
@@ -206,7 +218,7 @@ async function openAILikeChat(system, user, { maxTokens = 3000, temperature = 0.
   }
   const base = (cfg.baseUrl || provider.base).replace(/\/+$/, '');
   if (!base) throw new Error('请先在 AI 设置里填写接口地址');
-  const model = cfg.model || provider.model || 'gpt-4o-mini';
+  const model = effModel || 'gpt-4o-mini';
   const messages = [];
   if (system) messages.push({ role: 'system', content: system });
   messages.push({ role: 'user', content: user });
@@ -969,56 +981,112 @@ function fmtTime(ts) {
   });
 }
 
+const HISTORY_PAGE_SIZE = 10;
+let historyState = { kind: 'copy', page: 0 };
+
 function openHistory(kind) {
-  const modal = $('historyModal');
-  const title = $('historyTitle');
-  const hint = $('historyHint');
-  const list = $('historyList');
-  if (kind === 'copy') {
-    title.textContent = '文案历史记录';
-    hint.textContent = '按时间倒序展示最近 100 条生成记录，可编辑、复制或删除。';
-    renderCopyHistory(list);
-  } else {
-    title.textContent = '海报历史记录';
-    hint.textContent = '按时间倒序展示最近 15 条生成记录，可继续编辑、修改说明或删除。';
-    renderPosterHistory(list);
-  }
-  modal.hidden = false;
-  const box = modal.querySelector('.modal-box');
+  historyState = { kind, page: 0 };
+  $('historyDetail').hidden = true;
+  $('historyList').hidden = false;
+  $('historyTitle').textContent = kind === 'copy' ? '文案历史记录' : '海报历史记录';
+  $('historyHint').textContent = kind === 'copy'
+    ? '缩略列表：日期 · 知识库大类 · 渠道 · 主题。点击进入详情。'
+    : '缩略列表：日期 · 类型 · 指令摘要。点击进入详情。';
+  renderHistoryList();
+  $('historyModal').hidden = false;
+  const box = $('historyModal').querySelector('.modal-box');
   if (box) box.scrollTop = 0;
 }
 
-function renderCopyHistory(list) {
-  if (!copyHistory.length) {
-    list.innerHTML = '<p class="history-empty">还没有文案生成记录，先生成一条吧。</p>';
+function historyData() {
+  return historyState.kind === 'copy' ? copyHistory : posterHistory;
+}
+
+function historySummary(item) {
+  if (historyState.kind === 'copy') {
+    const catName = knowledge.categories?.[item.category]?.name || item.category || '';
+    return `${fmtTime(item.time)}  ${catName || '未分类'}  ${item.channel || ''}  ${String(item.product || item.content || '').slice(0, 18)}`;
+  }
+  const typeLabel = item.type === 'ai-edit' ? 'AI 编辑' : '成品海报';
+  return `${fmtTime(item.time)}  ${typeLabel}  ${String(item.instruction || item.style || '').slice(0, 22)}`;
+}
+
+function renderHistoryPager(total, page) {
+  const pager = $('historyPager');
+  const pages = Math.max(1, Math.ceil(total / HISTORY_PAGE_SIZE));
+  if (pages <= 1) { pager.innerHTML = ''; return; }
+  const btns = [];
+  if (page > 0) btns.push(`<button type="button" data-page="${page - 1}">‹ 上一页</button>`);
+  btns.push(`<span class="pager-info">${page + 1} / ${pages}</span>`);
+  if (page < pages - 1) btns.push(`<button type="button" data-page="${page + 1}">下一页 ›</button>`);
+  pager.innerHTML = btns.join('');
+  pager.querySelectorAll('button[data-page]').forEach(btn => {
+    btn.onclick = () => {
+      historyState.page = +btn.dataset.page;
+      renderHistoryList();
+    };
+  });
+}
+
+function renderHistoryList() {
+  const list = $('historyList');
+  const data = [...historyData()].sort((a, b) => b.time - a.time);
+  const total = data.length;
+  const page = Math.min(historyState.page, Math.max(0, Math.ceil(total / HISTORY_PAGE_SIZE) - 1));
+  historyState.page = page;
+  if (!total) {
+    list.innerHTML = `<p class="history-empty">还没有${historyState.kind === 'copy' ? '文案' : '海报'}生成记录，先生成一条吧。</p>`;
+    $('historyPager').innerHTML = '';
     return;
   }
-  list.innerHTML = [...copyHistory]
-    .sort((a, b) => b.time - a.time)
-    .map(item => `
-      <div class="history-item" data-id="${item.id}">
-        <div class="history-head">
-          <span class="history-time">${fmtTime(item.time)}</span>
-          <span class="history-badges">
-            ${item.channel ? `<span class="badge">${escapeHtml(item.channel)}</span>` : ''}
-            ${item.product ? `<span class="badge">${escapeHtml(item.product)}</span>` : ''}
-          </span>
-          <span class="history-actions">
-            <button type="button" data-copy="${item.id}">复制</button>
-            <button type="button" data-edit="${item.id}">编辑</button>
-            <button type="button" class="danger" data-del="${item.id}">删除</button>
-          </span>
-        </div>
-        <div class="history-body">${escapeHtml(item.content)}</div>
-        <textarea class="history-edit" rows="8"></textarea>
-      </div>`).join('');
-  list.querySelectorAll('.history-item').forEach(row => {
-    const id = Number(row.dataset.id);
-    const record = copyHistory.find(item => item.id === id);
-    const body = row.querySelector('.history-body');
-    const editor = row.querySelector('.history-edit');
-    if (record) editor.value = record.content;
-    row.querySelector('[data-copy]').onclick = async () => {
+  const slice = data.slice(page * HISTORY_PAGE_SIZE, (page + 1) * HISTORY_PAGE_SIZE);
+  list.innerHTML = slice.map(item => {
+    const isCopy = historyState.kind === 'copy';
+    return `<div class="history-row" data-id="${item.id}" role="button">
+      <span class="history-summary">${escapeHtml(historySummary(item))}</span>
+      <span class="history-arrow">›</span>
+    </div>`;
+  }).join('');
+  list.querySelectorAll('.history-row').forEach(row => {
+    row.onclick = () => {
+      const record = historyData().find(item => item.id === Number(row.dataset.id));
+      if (record) openHistoryDetail(record);
+    };
+  });
+  renderHistoryPager(total, page);
+}
+
+function openHistoryDetail(record) {
+  const list = $('historyList');
+  const detail = $('historyDetail');
+  list.hidden = true;
+  $('historyPager').innerHTML = '';
+  detail.hidden = false;
+  if (historyState.kind === 'copy') {
+    const catName = knowledge.categories?.[record.category]?.name || record.category || '';
+    detail.innerHTML = `
+      <div class="history-detail-head">
+        <button type="button" data-back class="alt">‹ 返回列表</button>
+        <span class="history-time">${fmtTime(record.time)}</span>
+        ${catName ? `<span class="badge">${escapeHtml(catName)}</span>` : ''}
+        ${record.channel ? `<span class="badge">${escapeHtml(record.channel)}</span>` : ''}
+        ${record.product ? `<span class="badge">${escapeHtml(record.product)}</span>` : ''}
+      </div>
+      <div class="history-detail-meta">
+        ${record.persona ? `<div><b>视角：</b>${escapeHtml(record.persona)}</div>` : ''}
+        ${record.content_type ? `<div><b>类型：</b>${escapeHtml(record.content_type)}</div>` : ''}
+        ${record.needs ? `<div><b>需求：</b>${escapeHtml(record.needs)}</div>` : ''}
+      </div>
+      <div class="history-body">${escapeHtml(record.content)}</div>
+      <textarea class="history-edit" rows="10" hidden>${escapeHtml(record.content)}</textarea>
+      <div class="history-detail-actions">
+        <button type="button" data-copy>复制</button>
+        <button type="button" data-edit>编辑</button>
+        <button type="button" class="danger" data-del>删除</button>
+      </div>`;
+    const body = detail.querySelector('.history-body');
+    const editor = detail.querySelector('.history-edit');
+    detail.querySelector('[data-copy]').onclick = async () => {
       try {
         await navigator.clipboard.writeText(record.content);
         alert('已复制到剪贴板');
@@ -1032,97 +1100,74 @@ function renderCopyHistory(list) {
         alert('已复制到剪贴板');
       }
     };
-    row.querySelector('[data-edit]').onclick = () => {
-      row.classList.toggle('editing');
-      editor.focus();
+    detail.querySelector('[data-edit]').onclick = () => {
+      editor.hidden = !editor.hidden;
+      if (!editor.hidden) editor.focus();
     };
-    row.querySelector('[data-del]').onclick = () => {
-      if (!confirm('确定删除这条历史记录吗？')) return;
-      copyHistory = copyHistory.filter(item => item.id !== id);
-      lsSet(LS.copyHistory, copyHistory);
-      row.remove();
-      if (!copyHistory.length) renderCopyHistory(list);
-    };
-    editor.addEventListener('keydown', event => {
-      if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
-        record.content = editor.value;
-        body.textContent = record.content;
-        row.classList.remove('editing');
-        lsSet(LS.copyHistory, copyHistory);
-      }
-    });
     editor.addEventListener('blur', () => {
       if (editor.value !== record.content) {
         record.content = editor.value;
         body.textContent = record.content;
         lsSet(LS.copyHistory, copyHistory);
       }
-      row.classList.remove('editing');
+      editor.hidden = true;
     });
-  });
-}
-
-function renderPosterHistory(list) {
-  if (!posterHistory.length) {
-    list.innerHTML = '<p class="history-empty">还没有海报生成记录，先生成一张吧。</p>';
-    return;
-  }
-  list.innerHTML = [...posterHistory]
-    .sort((a, b) => b.time - a.time)
-    .map(item => `
-      <div class="history-item" data-id="${item.id}">
-        <div class="history-head">
-          <span class="history-time">${fmtTime(item.time)}</span>
-          <span class="history-badges">
-            <span class="badge">${item.type === 'ai-edit' ? 'AI 编辑' : '成品海报'}</span>
-            ${item.style ? `<span class="badge">${escapeHtml(item.style)}</span>` : ''}
-          </span>
-          <span class="history-actions">
-            <button type="button" data-load="${item.id}">继续编辑</button>
-            <button type="button" data-edit="${item.id}">修改说明</button>
-            <button type="button" class="danger" data-del="${item.id}">删除</button>
-          </span>
+  } else {
+    detail.innerHTML = `
+      <div class="history-detail-head">
+        <button type="button" data-back class="alt">‹ 返回列表</button>
+        <span class="history-time">${fmtTime(record.time)}</span>
+        <span class="badge">${record.type === 'ai-edit' ? 'AI 编辑' : '成品海报'}</span>
+        ${record.style ? `<span class="badge">${escapeHtml(record.style)}</span>` : ''}
+      </div>
+      <div class="history-poster-detail">
+        <img src="${record.image}" alt="海报预览">
+        <div class="history-meta">
+          <div><b>指令：</b><span class="clip">${escapeHtml(record.instruction)}</span></div>
+          <div><b>引擎：</b>${escapeHtml(record.engine || '—')}</div>
+          <div><b>尺寸：</b>${record.width}×${record.height}</div>
         </div>
-        <div class="history-poster">
-          <img src="${item.image}" alt="海报预览">
-          <div class="history-meta">
-            <div><b>指令：</b><span class="clip">${escapeHtml(item.instruction)}</span></div>
-            <div><b>引擎：</b>${escapeHtml(item.engine || '—')}</div>
-            <div><b>尺寸：</b>${item.width}×${item.height}</div>
-          </div>
-        </div>
-        <textarea class="history-edit" rows="4"></textarea>
-      </div>`).join('');
-  list.querySelectorAll('.history-item').forEach(row => {
-    const id = Number(row.dataset.id);
-    const record = posterHistory.find(item => item.id === id);
-    const editor = row.querySelector('.history-edit');
-    const meta = row.querySelector('.history-meta .clip');
-    if (record) editor.value = record.instruction;
-    row.querySelector('[data-load]').onclick = () => {
+      </div>
+      <textarea class="history-edit" rows="4" hidden>${escapeHtml(record.instruction)}</textarea>
+      <div class="history-detail-actions">
+        <button type="button" data-load>继续编辑</button>
+        <button type="button" data-edit>修改说明</button>
+        <button type="button" class="danger" data-del>删除</button>
+      </div>`;
+    const editor = detail.querySelector('.history-edit');
+    detail.querySelector('[data-load]').onclick = () => {
       loadPosterRecord(record);
       $('historyModal').hidden = true;
     };
-    row.querySelector('[data-edit]').onclick = () => {
-      row.classList.toggle('editing');
-      editor.focus();
-    };
-    row.querySelector('[data-del]').onclick = () => {
-      if (!confirm('确定删除这条海报历史记录吗？')) return;
-      posterHistory = posterHistory.filter(item => item.id !== id);
-      lsSet(LS.posterHistory, posterHistory);
-      row.remove();
-      if (!posterHistory.length) renderPosterHistory(list);
+    detail.querySelector('[data-edit]').onclick = () => {
+      editor.hidden = !editor.hidden;
+      if (!editor.hidden) editor.focus();
     };
     editor.addEventListener('blur', () => {
       if (record && editor.value !== record.instruction) {
         record.instruction = editor.value;
-        if (meta) meta.textContent = editor.value;
         lsSet(LS.posterHistory, posterHistory);
       }
-      row.classList.remove('editing');
+      editor.hidden = true;
     });
-  });
+  }
+  detail.querySelector('[data-back]').onclick = () => {
+    detail.hidden = true;
+    list.hidden = false;
+    renderHistoryPager(historyData().length, historyState.page);
+  };
+  detail.querySelector('[data-del]').onclick = () => {
+    if (!confirm('确定删除这条历史记录吗？')) return;
+    const key = historyState.kind === 'copy' ? LS.copyHistory : LS.posterHistory;
+    const arr = historyState.kind === 'copy' ? copyHistory : posterHistory;
+    const next = arr.filter(item => item.id !== record.id);
+    if (historyState.kind === 'copy') copyHistory = next; else posterHistory = next;
+    lsSet(key, next);
+    detail.hidden = true;
+    list.hidden = false;
+    historyState.page = 0;
+    renderHistoryList();
+  };
 }
 
 function loadPosterRecord(record) {
@@ -1506,13 +1551,14 @@ $('generate').onclick = async event => {
     profile: $('profileBox').value,
     materials: checkedMaterialsText()
   };
+  const deepThink = $('deepThink').checked;
   try {
     let content;
     if (hasByok()) {
       content = await openAILikeChat(
         buildSystemPrompt(payload),
-        buildTaskPrompt(payload),
-        { maxTokens: 6500 }
+        buildTaskPrompt(payload) + (deepThink ? '\n\n【深度思考要求】先系统梳理：受众与渠道特点、素材与知识库要点、可用的真实品牌/商品/价格数据、卖点优先级与结构方案；再输出成稿。推理过程不需要展示，直接给出最终内容。' : ''),
+        { maxTokens: deepThink ? 9000 : 6500, deep: deepThink }
       );
     } else {
       if (IS_GITHUB_PAGES) await ensurePuterAuth();
@@ -2200,7 +2246,7 @@ if (posterNav) {
     button.onclick = () => {
       posterNav.querySelectorAll('button[data-view]').forEach(b => b.classList.remove('on'));
       button.classList.add('on');
-      document.querySelectorAll('.view').forEach(view => {
+      document.querySelectorAll('#poster .view').forEach(view => {
         view.hidden = view.dataset.view !== button.dataset.view;
       });
     };
@@ -2676,6 +2722,375 @@ $('download').onclick = () => {
   anchor.download = `TripMALL营销海报_${canvas.width}x${canvas.height}.png`;
   anchor.href = canvas.toDataURL('image/png');
   anchor.click();
+};
+
+/* ============================ 视频生成 ============================ */
+
+/* 视频功能导航：三个功能页切换（限定在 #video 内，避免影响海报视图） */
+const videoNav = $('videoNav');
+if (videoNav) {
+  videoNav.querySelectorAll('button[data-view]').forEach(button => {
+    button.onclick = () => {
+      videoNav.querySelectorAll('button[data-view]').forEach(b => b.classList.remove('on'));
+      button.classList.add('on');
+      document.querySelectorAll('#video .view').forEach(view => {
+        view.hidden = view.dataset.view !== button.dataset.view;
+      });
+    };
+  });
+}
+
+/* 视频任务专用慢速进度条：视频通常 1–5 分钟，别像文案那样几十秒就走完 */
+function startVideoProgress(barId) {
+  const bar = $(barId);
+  const pct = $(barId + 'Pct');
+  const fill = $(barId + 'Fill');
+  const noop = { done() {}, fail() {}, stop() {} };
+  if (!bar || !pct || !fill) return noop;
+  bar.hidden = false;
+  bar.classList.remove('done', 'fail');
+  pct.textContent = '1%';
+  fill.style.width = '1%';
+  let progress = 1;
+  let timer = null;
+  let finished = false;
+  const tick = () => {
+    if (finished) return;
+    let step;
+    if (progress < 30) step = 0.2 + Math.random() * 0.35;
+    else if (progress < 70) step = 0.1 + Math.random() * 0.18;
+    else if (progress < 90) step = 0.05 + Math.random() * 0.09;
+    else step = 0.02;
+    progress = Math.min(94, progress + step);
+    pct.textContent = Math.floor(progress) + '%';
+    fill.style.width = Math.floor(progress) + '%';
+    timer = setTimeout(tick, 500);
+  };
+  timer = setTimeout(tick, 500);
+  return {
+    done() {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timer);
+      pct.textContent = '100%';
+      fill.style.width = '100%';
+      bar.classList.add('done');
+      setTimeout(() => { bar.hidden = true; }, 1000);
+    },
+    fail() {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timer);
+      bar.classList.add('fail');
+      setTimeout(() => { bar.hidden = true; }, 1600);
+    },
+    stop() {
+      finished = true;
+      clearTimeout(timer);
+      bar.hidden = true;
+    }
+  };
+}
+
+function readFileAsDataURL(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error('文件读取失败'));
+    reader.readAsDataURL(file);
+  });
+}
+
+function videoConfigError() {
+  if (!hasByokImage()) return imageConfigError();
+  const imgCfg = getImageConfig();
+  if (imgCfg.provider !== 'qianwen') {
+    return '视频生成需要千问AI平台 Token Plan（阿里云月付套餐）：请在「AI 设置 → 图片生成」把图片服务商选为「千问AI平台 Token Plan（月付套餐）」，并填 sk-sp- 开头的 Key。';
+  }
+  return '';
+}
+
+async function relayVideoCreate(cfg, body) {
+  if (!API_BASE) throw new Error('Token Plan 视频接口需要服务端中转，请在部署环境（github.io 线上页面）使用');
+  const resp = await fetch(apiUrl('/api/token-plan-video-create'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(Object.assign({ apiKey: cfg.key }, body))
+  });
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw new Error(data.error || `视频任务创建失败（${resp.status}）`);
+  if (!data.task_id) throw new Error('视频任务未返回任务 ID，请稍后重试');
+  return data;
+}
+
+async function relayVideoGet(cfg, taskId) {
+  if (!API_BASE) throw new Error('Token Plan 视频接口需要服务端中转，请在部署环境（github.io 线上页面）使用');
+  const resp = await fetch(apiUrl('/api/token-plan-video-get'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ apiKey: cfg.key, task_id: taskId })
+  });
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw new Error(data.error || `视频状态查询失败（${resp.status}）`);
+  return data;
+}
+
+/* 轮询视频任务（每 15 秒一次，最长 10 分钟） */
+async function pollVideoTask(cfg, taskId, statusEl) {
+  const deadline = Date.now() + 10 * 60 * 1000;
+  const labels = { PENDING: '排队中，请稍候…', RUNNING: '生成中，通常需要 1–5 分钟…' };
+  while (Date.now() < deadline) {
+    await new Promise(resolve => setTimeout(resolve, 15000));
+    const data = await relayVideoGet(cfg, taskId);
+    if (statusEl && labels[data.task_status]) statusEl.textContent = labels[data.task_status];
+    if (data.task_status === 'SUCCEEDED') return data;
+    if (data.task_status === 'FAILED') throw new Error(data.message || '视频生成失败，请重试或调整指令');
+  }
+  throw new Error('视频生成超时（10 分钟），任务仍在后台运行，稍后可重试');
+}
+
+function showVideoPreview(url) {
+  const box = $('videoPreviewBox');
+  box.hidden = false;
+  $('videoPreview').src = url;
+  $('videoDownload').href = url;
+}
+
+function clearVideoPreview() {
+  const video = $('videoPreview');
+  video.pause();
+  video.removeAttribute('src');
+  video.load();
+  $('videoPreviewBox').hidden = true;
+}
+if ($('videoPreviewClose')) $('videoPreviewClose').onclick = clearVideoPreview;
+
+async function runVideoTask(kind, options, ui) {
+  const progress = startVideoProgress(ui.progressId);
+  const status = $(ui.statusId);
+  const button = ui.button;
+  status.textContent = '';
+  const configError = videoConfigError();
+  if (configError) {
+    status.textContent = configError;
+    progress.stop();
+    return;
+  }
+  const cfg = getImageConfig();
+  button.textContent = ui.busyLabel || '生成中…';
+  try {
+    const task = await relayVideoCreate(cfg, {
+      kind,
+      prompt: options.prompt || '',
+      media: options.media || [],
+      resolution: options.resolution || '720P',
+      ratio: options.ratio || '',
+      duration: options.duration || 5,
+      sound_control: options.sound || ''
+    });
+    status.textContent = '任务已提交，排队中…';
+    const result = await pollVideoTask(cfg, task.task_id, status);
+    if (!result.video_url) throw new Error('任务完成但未返回视频地址，请稍后重试');
+    showVideoPreview(result.video_url);
+    status.textContent = '视频生成完成，已在上方预览，可点击下载。';
+    progress.done();
+  } catch (error) {
+    status.textContent = `生成失败：${error.message}`;
+    progress.fail();
+  } finally {
+    button.textContent = ui.idleLabel || '生成视频';
+  }
+}
+
+function videoCommonParams(prefix) {
+  const ratioEl = $(prefix + 'Ratio');
+  const durationEl = $(prefix + 'Duration');
+  return {
+    resolution: $(prefix + 'Res').value,
+    ratio: ratioEl ? ratioEl.value : '',
+    duration: durationEl ? parseInt(durationEl.value, 10) : 5
+  };
+}
+
+/* —— 图/文生视频 —— */
+if ($('videoFirstFrame')) $('videoFirstFrame').onchange = async event => {
+  const file = event.target.files && event.target.files[0];
+  const box = $('videoFirstFramePreview');
+  if (!file) {
+    box.hidden = true;
+    box.innerHTML = '';
+    return;
+  }
+  try {
+    const { dataUrl } = await resizeImageFile(file, 1024);
+    box.innerHTML = `<img src="${dataUrl}" alt="首帧预览">`;
+    box.hidden = false;
+  } catch {
+    box.hidden = true;
+  }
+};
+
+if ($('videoT2vBtn')) $('videoT2vBtn').onclick = async event => {
+  const button = event.currentTarget;
+  const prompt = $('videoT2vPrompt').value.trim();
+  const file = $('videoFirstFrame').files[0];
+  const status = $('videoT2vStatus');
+  let media = [];
+  if (file) {
+    try {
+      const { dataUrl } = await resizeImageFile(file, 1024);
+      media = [{ type: 'first_frame', url: dataUrl }];
+    } catch {
+      status.textContent = '首帧图片读取失败，请换一张图';
+      return;
+    }
+  }
+  if (!prompt && !media.length) {
+    status.textContent = '请先输入视频描述（或上传首帧图片后只写运动描述）。';
+    return;
+  }
+  const kind = media.length ? 'i2v' : 't2v';
+  await runVideoTask(kind, { prompt, media, ...videoCommonParams('videoT2v') }, {
+    progressId: 'videoT2vProgress',
+    statusId: 'videoT2vStatus',
+    button,
+    idleLabel: '🎬 生成视频',
+    busyLabel: '生成中…'
+  });
+};
+
+/* —— 参考生视频 —— */
+const videoRefs = [];
+function addVideoRef(src) {
+  if (videoRefs.length >= 9) return;
+  videoRefs.push(src);
+  renderVideoRefs();
+}
+function removeVideoRef(index) {
+  videoRefs.splice(index, 1);
+  renderVideoRefs();
+}
+function renderVideoRefs() {
+  const list = $('videoRefList');
+  if (!list) return;
+  if (!videoRefs.length) {
+    list.innerHTML = '';
+    return;
+  }
+  list.innerHTML = videoRefs.map((src, index) => `
+    <div class="ref-thumb">
+      <img src="${src}" alt="参考图 ${index + 1}">
+      <span>${index + 1}</span>
+      <button type="button" data-remove="${index}" title="删除">✕</button>
+    </div>`).join('');
+  list.querySelectorAll('[data-remove]').forEach(btn => {
+    btn.onclick = () => removeVideoRef(+btn.dataset.remove);
+  });
+}
+
+if ($('videoRefFiles')) $('videoRefFiles').onchange = async event => {
+  const files = Array.from(event.target.files || []).slice(0, 9 - videoRefs.length);
+  for (const file of files) {
+    try {
+      const { dataUrl } = await resizeImageFile(file, 1024);
+      addVideoRef(dataUrl);
+    } catch { /* 忽略损坏图片 */ }
+  }
+  event.target.value = '';
+};
+
+if ($('videoRefUrlBtn')) $('videoRefUrlBtn').onclick = async () => {
+  const url = $('videoRefUrl').value.trim();
+  if (!url) return alert('先粘贴链接');
+  const btn = $('videoRefUrlBtn');
+  const status = $('videoRefStatus');
+  btn.textContent = '解析中…';
+  status.textContent = '';
+  try {
+    const resp = await fetch(apiUrl('/api/token-plan-video-refs'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url })
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new Error(data.error || `解析失败（${resp.status}）`);
+    const images = (data.images || []).slice(0, 9 - videoRefs.length);
+    if (!images.length) throw new Error('未提取到可用图片，请直接上传参考图');
+    images.forEach(src => addVideoRef(src));
+    status.textContent = `已从链接提取 ${images.length} 张参考图，可直接生成。`;
+  } catch (error) {
+    status.textContent = `链接解析失败：${error.message}`;
+  } finally {
+    btn.textContent = '解析链接';
+  }
+};
+
+if ($('videoRefBtn')) $('videoRefBtn').onclick = async event => {
+  const button = event.currentTarget;
+  const prompt = $('videoRefPrompt').value.trim();
+  const status = $('videoRefStatus');
+  if (!prompt) {
+    status.textContent = '请先输入视频描述（用 [Image 1]、[Image 2] 指代参考图）。';
+    return;
+  }
+  if (!videoRefs.length) {
+    status.textContent = '请先上传参考图或解析链接提取图片。';
+    return;
+  }
+  const media = videoRefs.map(url => ({ type: 'reference_image', url }));
+  await runVideoTask('r2v', { prompt, media, ...videoCommonParams('videoRef') }, {
+    progressId: 'videoRefProgress',
+    statusId: 'videoRefStatus',
+    button,
+    idleLabel: '🖼 生成视频',
+    busyLabel: '生成中…'
+  });
+};
+
+/* —— 视频编辑 —— */
+if ($('videoEditBtn')) $('videoEditBtn').onclick = async event => {
+  const button = event.currentTarget;
+  const prompt = $('videoEditPrompt').value.trim();
+  const status = $('videoEditStatus');
+  if (!prompt) {
+    status.textContent = '请先输入编辑指令。';
+    return;
+  }
+  const file = $('videoEditFile').files[0];
+  const videoUrl = $('videoEditUrl').value.trim();
+  if (!file && !videoUrl) {
+    status.textContent = '请上传待编辑视频，或粘贴公网视频链接。';
+    return;
+  }
+  if (file && file.size > 2.5 * 1024 * 1024) {
+    status.textContent = '视频文件超过 2.5MB（中转接口限制），请压缩/截短后再上传，或粘贴公网视频链接。';
+    return;
+  }
+  const media = [];
+  try {
+    if (file) media.push({ type: 'video', url: await readFileAsDataURL(file) });
+    else media.push({ type: 'video', url: videoUrl });
+    const refs = Array.from($('videoEditRefs').files || []).slice(0, 5);
+    for (const ref of refs) {
+      const { dataUrl } = await resizeImageFile(ref, 1024);
+      media.push({ type: 'reference_image', url: dataUrl });
+    }
+  } catch {
+    status.textContent = '文件读取失败，请重试。';
+    return;
+  }
+  await runVideoTask('edit', {
+    prompt,
+    media,
+    resolution: $('videoEditRes').value,
+    sound: $('videoEditSound').value
+  }, {
+    progressId: 'videoEditProgress',
+    statusId: 'videoEditStatus',
+    button,
+    idleLabel: '✂️ 编辑视频',
+    busyLabel: '编辑中…'
+  });
 };
 
 /* ============================ 初始化 ============================ */

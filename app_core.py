@@ -175,6 +175,194 @@ def token_plan_image(p):
         "image": "data:image/png;base64," + base64.b64encode(img_resp.content).decode()
     }
 
+
+def _token_plan_get(url, api_key, timeout=30):
+    import requests
+
+    resp = requests.get(
+        url,
+        headers={"Authorization": "Bearer " + api_key},
+        timeout=timeout,
+    )
+    return resp
+
+
+VIDEO_MODELS = {
+    "t2v": "happyhorse-1.1-t2v",
+    "i2v": "happyhorse-1.1-i2v",
+    "r2v": "happyhorse-1.1-r2v",
+    "edit": "happyhorse-1.0-video-edit",
+}
+
+
+def token_plan_video_create(p):
+    """Token Plan 视频中转：异步提交任务。
+    kind: t2v 文生视频 / i2v 图生视频(首帧) / r2v 参考生视频 / edit 视频编辑。
+    Token Plan 接口未开放浏览器跨域，必须由服务端调用。
+    """
+    api_key = str(p.get("apiKey") or "").strip()
+    if not api_key:
+        raise ValueError("缺少 Token Plan API Key")
+    kind = str(p.get("kind") or "t2v").strip()
+    model = VIDEO_MODELS.get(kind)
+    if not model:
+        raise ValueError("不支持的视频类型：" + kind)
+    prompt = str(p.get("prompt") or "").strip()
+    media = p.get("media") or []
+    clean_media = []
+    for item in media:
+        if isinstance(item, dict) and item.get("url"):
+            clean_media.append(
+                {
+                    "type": str(item.get("type") or "reference_image"),
+                    "url": str(item["url"]),
+                }
+            )
+    if kind in ("t2v", "r2v", "edit") and not prompt:
+        raise ValueError("缺少视频描述/编辑指令")
+    if kind == "i2v" and not clean_media:
+        raise ValueError("图生视频需要上传首帧图片")
+    if kind == "r2v" and not clean_media:
+        raise ValueError("参考生视频需要至少一张参考图")
+    if kind == "edit" and not any(m.get("type") == "video" for m in clean_media):
+        raise ValueError("视频编辑需要上传或粘贴待编辑视频")
+    video_input = {}
+    if prompt:
+        video_input["prompt"] = prompt
+    if clean_media:
+        video_input["media"] = clean_media
+    parameters = {"watermark": False}
+    resolution = str(p.get("resolution") or "720P").strip()
+    if resolution:
+        parameters["resolution"] = resolution
+    ratio = str(p.get("ratio") or "").strip()
+    if ratio and kind in ("t2v", "r2v"):
+        parameters["ratio"] = ratio
+    duration = p.get("duration")
+    if duration and kind in ("t2v", "i2v", "r2v"):
+        try:
+            parameters["duration"] = int(duration)
+        except (TypeError, ValueError):
+            pass
+    sound = str(p.get("sound_control") or "").strip()
+    if sound and kind == "edit":
+        parameters["sound_control"] = sound
+    payload = {"model": model, "input": video_input, "parameters": parameters}
+    resp = _token_plan_call(
+        TOKEN_PLAN_BASE + "/api/v1/services/aigc/video-generation/video-synthesis",
+        api_key,
+        payload,
+        timeout=60,
+    )
+    if resp.status_code != 200:
+        raise RuntimeError(_token_plan_error(resp, "视频"))
+    data = resp.json()
+    out = data.get("output") or {}
+    task_id = out.get("task_id") or ""
+    if not task_id:
+        raise ValueError("Token Plan 视频接口未返回 task_id")
+    return {"task_id": task_id, "task_status": out.get("task_status") or "PENDING"}
+
+
+def token_plan_video_get(p):
+    """Token Plan 视频轮询中转：GET /tasks/{task_id}"""
+    api_key = str(p.get("apiKey") or "").strip()
+    task_id = str(p.get("task_id") or "").strip()
+    if not api_key:
+        raise ValueError("缺少 Token Plan API Key")
+    if not task_id:
+        raise ValueError("缺少视频任务 ID")
+    resp = _token_plan_get(
+        TOKEN_PLAN_BASE + "/api/v1/tasks/" + task_id,
+        api_key,
+        timeout=30,
+    )
+    if resp.status_code != 200:
+        raise RuntimeError(_token_plan_error(resp, "视频"))
+    data = resp.json()
+    out = data.get("output") or {}
+    result = {
+        "task_id": task_id,
+        "task_status": out.get("task_status") or "RUNNING",
+        "video_url": out.get("video_url") or "",
+    }
+    message = out.get("message") or out.get("error") or data.get("message") or ""
+    if message:
+        result["message"] = str(message)[:500]
+    return result
+
+
+def token_plan_video_refs(p):
+    """参考生视频：从外部链接提取页面图片，返回公网 URL 列表作为参考图"""
+    url = str(p.get("url") or "").strip()
+    if not url:
+        raise ValueError("缺少链接")
+    raw, _ctype = _safe_fetch(url, timeout=20)
+    text = _decode_text(raw)
+    page = urlparse(url)
+    scheme = page.scheme or "https"
+    host = page.netloc or ""
+
+    def abs_url(ref):
+        ref = ref.strip().strip('"').strip("'")
+        if not ref or ref.lower().startswith("data:"):
+            return ""
+        if ref.startswith("//"):
+            return scheme + ":" + ref
+        if ref.startswith(("http://", "https://")):
+            return ref
+        if ref.startswith("/"):
+            return scheme + "://" + host + ref
+        return scheme + "://" + host + "/" + ref
+
+    candidates = []
+    for m in re.finditer(
+        r'<meta[^>]+(?:og:image|twitter:image)[^>]+>', text, re.I
+    ):
+        cm = re.search(r'content=["\']([^"\']+)["\']', m.group(0), re.I)
+        if cm:
+            candidates.append(cm.group(1))
+    for m in re.finditer(r'<img[^>]+src=["\']([^"\']+)["\']', text, re.I):
+        candidates.append(m.group(1))
+    for m in re.finditer(r'(?:<img[^>]+|<source[^>]+)srcset=["\']([^"\']+)["\']', text, re.I):
+        first = m.group(1).split(",")[0].strip().split(" ")[0]
+        candidates.append(first)
+    for m in re.finditer(r'background-image\s*:\s*url\(["\']?([^"\')\s]+)', text, re.I):
+        candidates.append(m.group(1))
+    for attr in ("data-src", "data-original", "data-lazy-src", "data-echo", "data-url"):
+        for m in re.finditer(attr + r'=["\']([^"\']+)["\']', text, re.I):
+            candidates.append(m.group(1))
+    bad_tokens = (
+        "logo",
+        "icon",
+        "sprite",
+        "loading",
+        "placeholder",
+        "pixel",
+        "blank",
+        "avatar",
+        "spinner",
+        "1x1",
+    )
+    seen, images = set(), []
+    for ref in candidates:
+        abs_url_value = abs_url(ref)
+        if not abs_url_value or abs_url_value in seen:
+            continue
+        lower = abs_url_value.lower()
+        if any(token in lower for token in bad_tokens):
+            continue
+        if not lower.endswith((".jpg", ".jpeg", ".png", ".webp", ".gif")):
+            continue
+        seen.add(abs_url_value)
+        images.append(abs_url_value)
+        if len(images) >= 9:
+            break
+    if not images:
+        raise ValueError("未从该链接提取到可用图片，请直接上传参考图")
+    return {"images": images}
+
+
 POSTER_STYLES = {
     "香槟金轻奢": "champagne gold and warm ivory luxury style, soft metallic accents, elegant, high-end hotel brand",
     "橙黑促销": "vibrant orange and deep charcoal promotional style, bold dynamic energy, modern retail campaign",

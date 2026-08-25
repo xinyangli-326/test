@@ -69,6 +69,12 @@ def route(environ):
                 return 200, app_core.token_plan_image(payload)
             if path.endswith("/api/token-plan-chat"):
                 return 200, app_core.token_plan_chat(payload)
+            if path.endswith("/api/token-plan-video-create"):
+                return 200, app_core.token_plan_video_create(payload)
+            if path.endswith("/api/token-plan-video-get"):
+                return 200, app_core.token_plan_video_get(payload)
+            if path.endswith("/api/token-plan-video-refs"):
+                return 200, app_core.token_plan_video_refs(payload)
             if path.endswith("/api/extract"):
                 return 200, app_core.extract(payload)
             return 404, {"error": "not found"}

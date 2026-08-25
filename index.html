@@ -16,6 +16,7 @@
     <a href="#kb">知识库</a>
     <a href="#create">文案生成</a>
     <a href="#poster">海报生成</a>
+    <a href="#video">视频生成</a>
     <a target="_blank" rel="noopener" href="https://ebooking.ctrip.com/hmall/index">服务市场主页 ↗</a>
   </div>
 </nav>
@@ -28,6 +29,7 @@
     <div class="hero-ctas">
       <a href="#create">文案生成</a>
       <a class="alt" href="#poster">海报生成</a>
+      <a class="alt" href="#video">视频生成</a>
     </div>
   </div>
   <img class="hero-img" src="assets/trip-mall-logo-transparent.png?v=zbuild22" alt="">
@@ -105,6 +107,9 @@
 
     <div class="gen-row">
       <button id="generate" class="primary">生成具体内容 →</button>
+      <label class="deep-toggle" title="开启后使用带推理能力的模型，先分析素材与需求再输出，内容更严谨但耗时更长">
+        <input id="deepThink" type="checkbox">🧠 深度思考
+      </label>
       <button id="copyHistoryBtn" type="button">📜 历史记录</button>
     </div>
     <div class="progress" id="copyProgress" hidden>
@@ -208,6 +213,120 @@
       </div>
     </div>
   </section>
+
+  <section id="video" class="panel reveal">
+    <div class="head">
+      <div><small>VIDEO GENERATOR</small><h2>视频生成</h2></div>
+      <span>文/图生视频 · 参考生视频 · 视频编辑（阿里云月付套餐 Token Plan）</span>
+    </div>
+    <div class="editor video-editor">
+      <div class="poster-nav" id="videoNav">
+        <button type="button" data-view="text" class="on">🎬 图/文生视频</button>
+        <button type="button" data-view="ref">🖼 参考生视频</button>
+        <button type="button" data-view="edit">✂️ 视频编辑</button>
+      </div>
+      <div class="video-main">
+        <div class="video-preview" id="videoPreviewBox" hidden>
+          <video id="videoPreview" controls playsinline preload="metadata"></video>
+          <div class="video-actions">
+            <a id="videoDownload" class="primary" download="ai-video.mp4">⬇ 下载视频</a>
+            <button id="videoPreviewClose" type="button">清除预览</button>
+          </div>
+        </div>
+        <div class="views">
+          <div class="view" data-view="text">
+            <div class="ai-poster-box">
+              <b>🎬 文生视频 / 图生视频</b>
+              <div class="ctl"><label>视频描述（支持中文，越具体越贴近你要的画面）</label>
+                <textarea id="videoT2vPrompt" rows="3" placeholder="例如：携程服务市场宠物房主题改造宣传片，镜头从酒店大堂推进到宠物友好客房，暖色灯光，展示宠物床、喂食碗与猫爬架，画面精致有高级感"></textarea></div>
+              <div class="ctl"><label>首帧图片（可选，上传后按首帧图生视频；不传则为纯文生视频）</label>
+                <input id="videoFirstFrame" type="file" accept="image/*"></div>
+              <div class="thumb-preview" id="videoFirstFramePreview" hidden></div>
+              <div class="row">
+                <div class="ctl"><label>分辨率</label>
+                  <select id="videoT2vRes"><option>720P</option><option>1080P</option><option>480P</option></select></div>
+                <div class="ctl"><label>比例（图生视频自动跟随首帧）</label>
+                  <select id="videoT2vRatio"><option>16:9</option><option>9:16</option><option>1:1</option><option>4:3</option><option>3:4</option><option>4:5</option><option>5:4</option></select></div>
+                <div class="ctl"><label>时长（秒）</label>
+                  <input id="videoT2vDuration" type="number" min="3" max="15" step="1" value="5"></div>
+              </div>
+              <button id="videoT2vBtn" class="primary" type="button">🎬 生成视频</button>
+              <div id="videoT2vStatus"></div>
+              <div class="progress" id="videoT2vProgress" hidden>
+                <div class="prog-head">
+                  <span class="prog-label">视频生成中，通常需要 1–5 分钟，请耐心等待…</span>
+                  <span class="prog-pct" id="videoT2vProgressPct">1%</span>
+                </div>
+                <div class="prog-track"><div class="prog-fill" id="videoT2vProgressFill"></div></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="view" data-view="ref" hidden>
+            <div class="ai-poster-box">
+              <b>🖼 参考生视频</b>
+              <div class="ctl"><label>参考图（可多张，AI 融合参考图中的主体/风格生成视频）</label>
+                <input id="videoRefFiles" type="file" accept="image/*" multiple></div>
+              <div class="ref-list" id="videoRefList"></div>
+              <div class="learn-tools">
+                <input id="videoRefUrl" type="url" placeholder="粘贴链接，自动提取页面图片作参考（如服务市场商品页）">
+                <button id="videoRefUrlBtn" type="button">解析链接</button>
+              </div>
+              <div class="ctl"><label>视频描述（用 [Image 1]、[Image 2] 指代参考图）</label>
+                <textarea id="videoRefPrompt" rows="3" placeholder="例如：[Image 1]中的宠物友好客房慢慢动起来，镜头环绕展示宠物床、喂食碗与猫爬架，暖色灯光，营销宣传片质感"></textarea></div>
+              <div class="row">
+                <div class="ctl"><label>分辨率</label>
+                  <select id="videoRefRes"><option>720P</option><option>1080P</option><option>480P</option></select></div>
+                <div class="ctl"><label>比例</label>
+                  <select id="videoRefRatio"><option>16:9</option><option>9:16</option><option>1:1</option><option>4:3</option><option>3:4</option><option>4:5</option><option>5:4</option></select></div>
+                <div class="ctl"><label>时长（秒）</label>
+                  <input id="videoRefDuration" type="number" min="3" max="15" step="1" value="5"></div>
+              </div>
+              <button id="videoRefBtn" class="primary" type="button">🖼 生成视频</button>
+              <div id="videoRefStatus"></div>
+              <div class="progress" id="videoRefProgress" hidden>
+                <div class="prog-head">
+                  <span class="prog-label">视频生成中，通常需要 1–5 分钟，请耐心等待…</span>
+                  <span class="prog-pct" id="videoRefProgressPct">1%</span>
+                </div>
+                <div class="prog-track"><div class="prog-fill" id="videoRefProgressFill"></div></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="view" data-view="edit" hidden>
+            <div class="ai-poster-box">
+              <b>✂️ 视频编辑</b>
+              <div class="ctl"><label>待编辑视频（MP4/MOV；走中转需 ≤2.5MB，也可粘贴公网视频链接）</label>
+                <input id="videoEditFile" type="file" accept="video/mp4,video/quicktime,video/*"></div>
+              <div class="ctl"><label>或粘贴公网视频链接（适合较大的视频文件）</label>
+                <input id="videoEditUrl" type="url" placeholder="https://.../xxx.mp4"></div>
+              <div class="ctl"><label>参考图（可选，最多 5 张，用于风格/局部替换参考）</label>
+                <input id="videoEditRefs" type="file" accept="image/*" multiple></div>
+              <div class="ctl"><label>编辑指令（必填）</label>
+                <textarea id="videoEditPrompt" rows="3" placeholder="例如：把视频整体换成香槟金轻奢风格，酒店品牌感更强，节奏更轻快，结尾加服务市场品牌感"></textarea></div>
+              <div class="row">
+                <div class="ctl"><label>分辨率</label>
+                  <select id="videoEditRes"><option>720P</option><option>1080P</option></select></div>
+                <div class="ctl"><label>声音</label>
+                  <select id="videoEditSound"><option value="auto">自动</option><option value="origin">保留原声</option></select></div>
+              </div>
+              <button id="videoEditBtn" class="primary" type="button">✂️ 编辑视频</button>
+              <div id="videoEditStatus"></div>
+              <div class="progress" id="videoEditProgress" hidden>
+                <div class="prog-head">
+                  <span class="prog-label">视频编辑中，通常需要 1–5 分钟，请耐心等待…</span>
+                  <span class="prog-pct" id="videoEditProgressPct">1%</span>
+                </div>
+                <div class="prog-track"><div class="prog-fill" id="videoEditProgressFill"></div></div>
+              </div>
+              <p class="hint">视频统一走千问AI平台 Token Plan（阿里云月付套餐，sk-sp- 开头 Key），与图片共用套餐额度。请在「AI 设置 → 图片生成」里把图片服务商选为「千问AI平台 Token Plan（月付套餐）」并填 Key。视频任务为异步生成，完成后会在上方直接预览并可下载。</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
 </main>
 
 <footer>
@@ -233,7 +352,9 @@
       <button id="historyClose" class="x" type="button" title="关闭">✕</button>
     </div>
     <p class="hint" id="historyHint"></p>
-    <div id="historyList" class="history-list"></div>
+    <div id="historyList" class="history-list" hidden></div>
+    <div id="historyDetail" class="history-detail" hidden></div>
+    <div id="historyPager" class="history-pager"></div>
   </div>
 </div>
 
