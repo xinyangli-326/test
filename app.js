@@ -2211,8 +2211,7 @@ if (posterNav) {
 $('aiPosterBtn').onclick = async event => {
   const button = event.currentTarget;
   const progress = startProgress('aiPosterProgress');
-  const files = $('aiPosterRef').files;
-  const assetFiles = files && files.length ? [...files].filter(f => f.type.startsWith('image/')) : [];
+  const file = $('aiPosterRef').files[0];
   const cmd = $('aiPosterCmd').value.trim();
   const extraText = $('aiPosterText').value.trim();
   const style = $('aiPosterStyle').value;
@@ -2230,13 +2229,10 @@ $('aiPosterBtn').onclick = async event => {
   const assetTextBlock = extraText
     ? `\n需要展示在画面中的文字内容（由 AI 自动排版，务必全部准确呈现、不得遗漏或改写）：\n${extraText}`
     : '';
-  const assetHint = assetFiles.length
-    ? `\n已提供 ${assetFiles.length} 张素材图片作为参考：请理解素材内容（产品图/对比表/示意图等），把素材以美观方式重新排版进海报（可裁剪、缩放、加圆角、配文字说明），不要直接照搬原图的文字排版。`
-    : '';
   const prompt = `请生成一张${psize.label}${ratioText}（画布 ${psize.w}×${psize.h}）的完整酒店营销海报成品图，图片内直接包含准确的中文文字（无错别字、无乱码）。
 主题：${product}。${styleText}
 用户指令（请严格执行）：${instruction}
-排版要求：标题醒目、卖点分条短句、信息层级清晰、高级商业广告质感${ctaHint}。${paletteText}${assetTextBlock}${assetHint}`;
+排版要求：标题醒目、卖点分条短句、信息层级清晰、高级商业广告质感${ctaHint}。${paletteText}${assetTextBlock}`;
   const aspectKey = psize.ratio > 1.1 ? '16:9' : (psize.ratio < 0.9 ? '9:16' : 'square');
   const genOpts = { aspect: aspectKey, size: psize.api };
   button.textContent = 'AI生成中…';
@@ -2249,31 +2245,13 @@ $('aiPosterBtn').onclick = async event => {
     }
     let src;
     const imgCfg = getImageConfig();
-    if (assetFiles.length) {
-      let reference = null;
+    if (file) {
+      const { dataUrl } = await resizeImageFile(file, 1024);
       try {
-        reference = await Promise.race([
-          composeAssetGrid(assetFiles),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('素材处理超时')), 20000))
-        ]);
-      } catch (gridError) {
-        try {
-          const { dataUrl } = await resizeImageFile(assetFiles[0], 1024);
-          reference = dataUrl;
-        } catch {
-          reference = null;
-        }
-      }
-      if (reference) {
-        try {
-          src = await openAILikeImage(prompt, { ...genOpts, reference });
-        } catch (refError) {
-          src = await openAILikeImage(prompt, genOpts);
-          $('aiPosterStatus').textContent = `参考图编辑不可用（${refError.message}），已改用文字指令生成。`;
-        }
-      } else {
+        src = await openAILikeImage(prompt, { ...genOpts, reference: dataUrl });
+      } catch (refError) {
         src = await openAILikeImage(prompt, genOpts);
-        $('aiPosterStatus').textContent = '素材图片读取失败，已改用纯文字指令生成。';
+        $('aiPosterStatus').textContent = `参考图编辑不可用（${refError.message}），已改用文字指令生成。`;
       }
     } else {
       src = await openAILikeImage(prompt, genOpts);
@@ -2293,13 +2271,13 @@ $('aiPosterBtn').onclick = async event => {
       instruction,
       prompt,
       style: style || '跟随指令',
-      engine: `${imgCfg.model}${(imgCfg.provider === 'dashscope' || imgCfg.provider === 'qianwen') && assetFiles.length ? '·素材参考编辑' : ''}`,
+      engine: `${imgCfg.model}${(imgCfg.provider === 'dashscope' || imgCfg.provider === 'qianwen') && file ? '·参考图编辑' : ''}`,
       width: canvas.width,
       height: canvas.height,
       image: await posterHistoryImage(src)
     });
     progress.done();
-    $('aiPosterStatus').textContent = `成品海报已生成（引擎：${imgCfg.model}${(imgCfg.provider === 'dashscope' || imgCfg.provider === 'qianwen') && assetFiles.length ? '·素材参考编辑' : ''}）。画布已更新为成品海报，可直接下载或微调。`;
+    $('aiPosterStatus').textContent = `成品海报已生成（引擎：${imgCfg.model}${(imgCfg.provider === 'dashscope' || imgCfg.provider === 'qianwen') && file ? '·参考图编辑' : ''}）。画布已更新为成品海报，可直接下载或微调。`;
   } catch (error) {
     $('aiPosterStatus').textContent = `生成失败：${error.message}`;
     progress.fail();
@@ -2461,41 +2439,6 @@ function resizeImageFile(file, maxSide) {
       resolve({ dataUrl: temp.toDataURL(mime, 0.9), mime });
     });
   });
-}
-
-// 把多张素材图拼成一张网格参考图（2列网格），作为 AI 排版海报的参考输入
-async function composeAssetGrid(files) {
-  const images = [];
-  for (const file of files.slice(0, 6)) {
-    const image = await new Promise((resolve, reject) => {
-      loadImageFile(file, resolve);
-      setTimeout(() => reject(new Error('图片读取超时')), 15000);
-    });
-    images.push(image);
-  }
-  if (!images.length) throw new Error('没有可用的素材图片');
-  const cols = Math.min(2, images.length);
-  const rows = Math.ceil(images.length / cols);
-  const cell = 640;
-  const gap = 12;
-  const pad = 12;
-  const canvas2 = document.createElement('canvas');
-  canvas2.width = pad * 2 + cols * cell + (cols - 1) * gap;
-  canvas2.height = pad * 2 + rows * cell + (rows - 1) * gap;
-  const g = canvas2.getContext('2d');
-  g.fillStyle = '#f4f1ec';
-  g.fillRect(0, 0, canvas2.width, canvas2.height);
-  images.forEach((image, index) => {
-    const col = index % cols;
-    const row = Math.floor(index / cols);
-    const x = pad + col * (cell + gap);
-    const y = pad + row * (cell + gap);
-    const ratio = Math.max(cell / image.width, cell / image.height);
-    const sw = cell / ratio;
-    const sh = cell / ratio;
-    g.drawImage(image, (image.width - sw) / 2, (image.height - sh) / 2, sw, sh, x, y, cell, cell);
-  });
-  return canvas2.toDataURL('image/jpeg', 0.92);
 }
 
 async function puterVision(file) {
