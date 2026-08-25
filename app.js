@@ -1392,10 +1392,19 @@ function knowledgeContext(payload) {
         `  在售代表商品：${(c.sample_products || []).join('；') || '—'}`
       ).join('\n')
     : '';
+  const wantsRecommendation = /推荐|好物|精选|清单|爆款/.test(String(payload.needs || '') + String(payload.content_type || ''));
+  const kw = String(payload.needs || '') + String(payload.product || '');
+  const kwScore = p => {
+    let s = 0;
+    const hit = t => (p.name || '').includes(t) || (p.cat || '').includes(t) || (p.note || '').includes(t);
+    ['宠物','布草','亲子','影音','舒睡','智能','机器人','耗品','牙具','毛巾','床垫','吹风机','摄影','旅拍','电玩','电竞','咖啡','食材'].forEach(t => { if (kw.includes(t) && hit(t)) s += 3; });
+    return s;
+  };
   const flagshipBlock = Array.isArray(live.flagship_products)
     ? live.flagship_products
-        .filter(p => !payload.category || !p.cat || p.cat === payload.category || p.cat.includes(payload.category))
-        .slice(0, 12)
+        .filter(p => wantsRecommendation || !payload.category || !p.cat || p.cat === payload.category || p.cat.includes(payload.category))
+        .sort((a, b) => kwScore(b) - kwScore(a))
+        .slice(0, wantsRecommendation ? 18 : 12)
         .map(p => `· ${p.name}｜${p.cat || ''}｜${p.price}｜${p.sales || ''}${p.rating ? '｜' + p.rating : ''}${p.coupon ? '｜' + p.coupon : ''}${p.note ? '｜' + p.note : ''}`)
         .join('\n')
     : '';

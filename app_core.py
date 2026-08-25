@@ -282,16 +282,72 @@ def generate(p):
         for c in mp.get("catalog", {}).get("categories", [])
     ]
     adv = mp.get("advantages", {})
+    live = mp.get("live", {}) or {}
+    live_cats = live.get("categories") or []
+    matched_live = [
+        c for c in live_cats
+        if not p.get("category") or c.get("name") == p.get("category") or c.get("parent") == p.get("category")
+    ]
+    live_cat_lines = []
+    for c in matched_live[:6]:
+        live_cat_lines.append(
+            f"- {c.get('parent')} / {c.get('name')}（cat={c.get('cat')}）："
+            f"三级分类：{'、'.join(c.get('sub_categories') or []) or '—'}；"
+            f"代表品牌：{'、'.join(c.get('brands') or []) or '—'}；"
+            f"在售代表商品：{'；'.join(c.get('sample_products') or []) or '—'}"
+        )
+    wants_recommendation = bool(re.search(r"推荐|好物|精选|清单|爆款", str(p.get("needs") or "") + str(p.get("content_type") or "")))
+    flagship_all = live.get("flagship_products") or []
+    kw = str(p.get("needs") or "") + str(p.get("product") or "")
+    kw_tags = ["宠物", "布草", "亲子", "影音", "舒睡", "智能", "机器人", "耗品", "牙具", "毛巾", "床垫", "吹风机", "摄影", "旅拍", "电玩", "电竞", "咖啡", "食材"]
+    def kw_score(item):
+        name = str(item.get("name") or "") + str(item.get("cat") or "") + str(item.get("note") or "")
+        return sum(3 for t in kw_tags if t in kw and t in name)
+    flagship = [
+        p_ for p_ in flagship_all
+        if wants_recommendation or not p.get("category") or not p_.get("cat") or p_["cat"] == p.get("category") or p_["cat"] in str(p.get("category"))
+    ]
+    flagship.sort(key=kw_score, reverse=True)
+    flagship = flagship[: (18 if wants_recommendation else 12)]
+    flagship_lines = [
+        f"- {p_.get('name')}｜{p_.get('cat') or ''}｜{p_.get('price') or ''}｜{p_.get('sales') or ''}"
+        f"{'｜' + p_.get('rating') if p_.get('rating') else ''}"
+        f"{'｜' + p_.get('coupon') if p_.get('coupon') else ''}"
+        f"{'｜' + p_.get('note') if p_.get('note') else ''}"
+        for p_ in flagship
+    ]
+    coupon_lines = [
+        f"- ¥{c.get('amount')} {c.get('threshold')}｜{c.get('scope')}"
+        f"{'｜' + c.get('note') if c.get('note') else ''}"
+        for c in (live.get("key_coupons") or [])
+    ]
+    stats = live.get("platform_stats") or {}
     kb_extra = "\n".join([
         "服务市场产品体系（写内容时按需引用）：",
         "\n".join(catalog_lines),
         f"官方六大服务保障：{adv.get('official_guarantees', '')}",
         "平台优势：" + "；".join(adv.get("platform_advantages", [])),
     ])
+    live_extra = ""
+    if live_cats:
+        live_parts = [
+            f"【服务市场实时商品库（{live.get('updated_at') or '最近抓取'}快照）】",
+            f"平台大盘：{stats.get('suppliers') or '—'}家供应商｜年销量{stats.get('annual_sales_orders') or '—'}单｜在售商品{stats.get('sku_count') or '—'}种",
+        ]
+        if live_cat_lines:
+            live_parts.append("当前品类明细：\n" + "\n".join(live_cat_lines))
+        if flagship_lines:
+            live_parts.append("热销/上新好物参考：\n" + "\n".join(flagship_lines))
+        if coupon_lines:
+            live_parts.append("当前活动券参考：\n" + "\n".join(coupon_lines))
+        if live.get("update_note"):
+            live_parts.append("【数据时效说明】" + live["update_note"])
+        live_extra = "\n".join(live_parts)
     prompt = f"""你是携程酒店服务市场的资深内容运营，为酒店写真实、生动、可直接发布的中文内容。
 {stance}
 {product_brief}
 {kb_extra}
+{live_extra}
 知识库大类：{cat.get('name')}；定义：{cat.get('description')}；可参考主题：{cat.get('topics')}
 产品/主题：{p.get('product')}
 目标视角：{p.get('persona')}
