@@ -787,13 +787,16 @@ function applyKnowledge(data) {
   if (!data?.categories) return false;
   const selected = $('category').value;
   knowledge = data;
-  const larkDocs = Array.isArray(data.lark?.docs) ? data.lark.docs.filter(doc => doc && doc.text && doc.text.trim()) : [];
+  const syncedDocs = Array.isArray(data.lark?.synced_docs)
+    ? data.lark.synced_docs
+    : (Array.isArray(data.lark?.docs) ? data.lark.docs : []);
+  const larkDocs = syncedDocs.filter(doc => doc && doc.text && doc.text.trim());
   if (larkDocs.length) {
     knowledge.lark_docs = larkDocs;
     $('larkStatus').textContent = `飞书内容库：已同步 ${larkDocs.length} 篇${data.lark.synced_at ? ' · ' + data.lark.synced_at : ''}`;
     lsSet(LARK_CACHE_KEY, { docs: larkDocs, synced_at: data.lark.synced_at || '' });
   } else {
-    const firstErr = Array.isArray(data.lark?.docs) ? data.lark.docs.find(doc => doc && doc.error) : null;
+    const firstErr = syncedDocs.find(doc => doc && doc.error) || null;
     const errText = (firstErr && firstErr.error) || data.lark?.last_error;
     if (errText) $('larkStatus').textContent = `飞书内容库：自动同步不可用（${errText}）`;
   }

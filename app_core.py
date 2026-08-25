@@ -651,7 +651,10 @@ def knowledge_live():
         except Exception as error:
             cached.update({"at": now, "docs": [], "error": str(error), "synced_at": ""})
     lark = merged.setdefault("lark", {})
-    lark["docs"] = cached["docs"] or []
+    # docs 保留配置（含 url/document_id，供前端跳转与再次同步）；
+    # 同步结果单独放 synced_docs，避免覆盖配置字段
+    lark["docs"] = KB.get("lark", {}).get("docs") or []
+    lark["synced_docs"] = cached["docs"] or []
     lark["synced_at"] = cached["synced_at"]
     lark["last_error"] = cached["error"]
     return merged
