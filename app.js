@@ -765,7 +765,8 @@ function renderCategoryCards() {
   $('categories').innerHTML = Object.entries(knowledge.categories).map(([key, value], index) => {
     const topics = Array.isArray(value.topics) ? value.topics : Object.keys(value.topics || {});
     const larkDocs = Array.isArray(knowledge.lark?.docs) ? knowledge.lark.docs : [];
-    const docUrl = value.doc_url || (larkDocs.find(doc => doc.key === key) || {}).url || '';
+    const larkDoc = larkDocs.find(doc => doc.key === key) || {};
+    const docUrl = larkDoc.url || value.doc_url || '';
     const docLink = docUrl
       ? `<a class="cat-doc" href="${escapeHtml(docUrl)}" target="_blank" rel="noopener">📄 查看飞书文档 ↗</a>`
       : '';
