@@ -129,8 +129,9 @@ def token_plan_image(p):
         content.append({"image": reference})
     content.append({"text": prompt})
     parameters = {"watermark": False}
-    if p.get("prompt_extend"):
-        parameters["prompt_extend"] = True
+    if "prompt_extend" in p:
+        # 显式透传 true/false：前端关闭 prompt 改写（防止文字乱码）时，后端不能把 false 吞掉
+        parameters["prompt_extend"] = bool(p.get("prompt_extend"))
     size = str(p.get("size") or "").strip()
     if size:
         parameters["size"] = size

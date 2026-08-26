@@ -256,9 +256,11 @@ async function dashscopeImage(prompt, { aspect = 'square', reference = null, siz
   content.push({ text: prompt });
   const parameters = { watermark: false };
   if (isV3) {
-    // 与阿里云控制台默认一致：不传 size，由模型 auto 推荐分辨率（生成与 AI 编辑都如此，不锁尺寸）
-    // 一键生成带参考图时关闭 prompt 智能改写，保证严格跟随参考图；AI 编辑保持控制台默认（不传 prompt_extend）
-    if (isEdit && strictRef) parameters.prompt_extend = false;
+    // 不传 size，由模型 auto 推荐分辨率（生成与 AI 编辑都如此，不锁尺寸）
+    // 关闭 prompt 智能改写：我们的指令已足够详细，改写会把要展示的中文文字带偏导致乱码；
+    // 反向提示词直接抑制乱码/错别字/模糊文字（qwen-image-3.0 官方支持，用于文字类生成）
+    parameters.prompt_extend = false;
+    parameters.negative_prompt = '乱码、错别字、模糊文字、扭曲文字、水印';
   } else {
     // Token Plan 官方示例与旧版 qwen-image 都支持 size；参考图编辑时百炼 qwen-image-edit 不传 size
     if (!isEdit || isTokenPlan) {
