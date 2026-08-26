@@ -201,7 +201,7 @@
                 </div>
                 <div class="prog-track"><div class="prog-fill" id="aiPosterProgressFill"></div></div>
               </div>
-              <p class="hint">AI 成品海报 = 完全按你的指令生成，可上传参考图让 AI 照着风格/构图来；推荐在 AI 设置里把图片服务商设为「阿里云百炼」或「千问AI平台 Token Plan（月付套餐）」，图片模型填 qwen-image-3.0-pro（月付套餐 Key 以 sk-sp- 开头，域名自动走 token-plan）。</p>
+              <p class="hint">AI 成品海报 = 完全按你的指令生成，可上传参考图让 AI 照着风格/构图来；推荐在 AI 设置里把图片服务商设为「阿里云百炼」或「千问AI平台 Token Plan（月付套餐）」，图片模型选 qwen-image-3.0-pro（旗舰版·质量最佳）或 qwen-image-3.0（常规版·速度更快；月付套餐 Key 以 sk-sp- 开头，域名自动走 token-plan）。</p>
             </div>
           </div>
 
@@ -436,26 +436,25 @@
       <label>图片 API Key（百炼填 sk- 开头；Token Plan 填 sk-sp- 开头专属 Key）</label>
       <input id="aiImageKey" type="password" placeholder="sk-sp-...（Token Plan）/ sk-...（百炼）" autocomplete="off">
       <label>图片模型</label>
-      <div class="row" style="grid-template-columns:1fr auto">
-        <input id="aiImageModel" list="imageModelList" placeholder="如 qwen-image-3.0-pro（百炼）/ black-forest-labs/FLUX.1-schnell（硅基）">
+      <div class="row" style="grid-template-columns:minmax(0,1fr) auto">
+        <select id="aiImageModel">
+          <option value="qwen-image-3.0-pro">qwen-image-3.0-pro（阿里旗舰版·质量最佳）</option>
+          <option value="qwen-image-3.0">qwen-image-3.0（阿里常规版·速度更快）</option>
+          <option value="qwen-image-2.0-pro">qwen-image-2.0-pro（备选）</option>
+          <option value="qwen-image-edit">qwen-image-edit（旧版）</option>
+          <option value="wan2.7-image">wan2.7-image（Token Plan 备选）</option>
+          <option value="black-forest-labs/FLUX.1-schnell">black-forest-labs/FLUX.1-schnell（硅基）</option>
+          <option value="cogview-4-250304">cogview-4-250304（智谱）</option>
+          <option value="gpt-image-1">gpt-image-1（OpenAI）</option>
+          <option value="__custom__">自定义模型…</option>
+        </select>
         <button id="aiImageModelSuggest" type="button">填入推荐模型</button>
       </div>
-      <datalist id="imageModelList">
-        <option value="qwen-image-3.0-pro"></option>
-        <option value="qwen-image-3.0"></option>
-        <option value="qwen-image-edit"></option>
-        <option value="qwen-image-2.0-pro"></option>
-        <option value="qwen-image-2.0"></option>
-        <option value="wan2.7-image"></option>
-        <option value="black-forest-labs/FLUX.1-schnell"></option>
-        <option value="black-forest-labs/FLUX.1-dev"></option>
-        <option value="cogview-4-250304"></option>
-        <option value="gpt-image-1"></option>
-      </datalist>
+      <input id="aiImageModelCustom" hidden placeholder="手动填写图片模型名，如 qwen-image-3.0-pro">
       <label>图片接口地址（Token Plan 选月付套餐后会自动填，一般不用改）</label>
       <input id="aiImageBaseUrl" placeholder="https://token-plan.cn-beijing.maas.aliyuncs.com">
       <button id="aiImgTest" type="button">测试图片生成</button>
-      <p class="hint">阿里月付套餐（Token Plan）配置：图片服务商选「千问AI平台 Token Plan（月付套餐）」，图片 API Key 填 Token Plan 页面里的专属 Key（sk-sp- 开头，创建时只显示一次），图片接口地址默认自动填 https://token-plan.cn-beijing.maas.aliyuncs.com（域名必须含 token-plan，不能填 dashscope）。重要：Token Plan 接口**未开放浏览器跨域**（官方只给服务端工具用），生图/文字会自动走网站自带的中转接口（test-xinyang.vercel.app）——中转后端需已部署且当前网络能访问；若中转不可达，会提示改用「阿里云百炼」（按量，浏览器可直连）或硅基流动。模型 qwen-image-3.0-pro 在套餐内（个人版/团队版都支持），文生图和参考图改图都可用；若报 403 说明该模型不在你的套餐版本，可换 qwen-image-2.0-pro / wan2.7-image。百炼按量用户则选「阿里云百炼」填 sk- 开头 Key；业务空间专属 Key 需在图片接口地址填 {WorkspaceId}.cn-beijing.maas.aliyuncs.com。</p>
+      <p class="hint">阿里月付套餐（Token Plan）配置：图片服务商选「千问AI平台 Token Plan（月付套餐）」，图片 API Key 填 Token Plan 页面里的专属 Key（sk-sp- 开头，创建时只显示一次），图片接口地址默认自动填 https://token-plan.cn-beijing.maas.aliyuncs.com（域名必须含 token-plan，不能填 dashscope）。重要：Token Plan 接口**未开放浏览器跨域**（官方只给服务端工具用），生图/文字会自动走网站自带的中转接口（test-xinyang.vercel.app）——中转后端需已部署且当前网络能访问；若中转不可达，会提示改用「阿里云百炼」（按量，浏览器可直连）或硅基流动。模型 qwen-image-3.0-pro（旗舰版）和 qwen-image-3.0（常规版，速度更快）套餐内都支持，文生图和参考图改图都可用；若报 403 说明该模型不在你的套餐版本，可换 qwen-image-2.0-pro / wan2.7-image。百炼按量用户则选「阿里云百炼」填 sk- 开头 Key；业务空间专属 Key 需在图片接口地址填 {WorkspaceId}.cn-beijing.maas.aliyuncs.com。</p>
     </div>
     <div class="row">
       <button id="aiTest" type="button">测试连接</button>

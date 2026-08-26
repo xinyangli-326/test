@@ -488,6 +488,35 @@ function updateAIStatus() {
   }
 }
 
+/* 图片模型：下拉选项与"自定义模型"输入框联动 */
+function setImageModel(value) {
+  const sel = $('aiImageModel');
+  const custom = $('aiImageModelCustom');
+  if (!sel) return;
+  const v = String(value || '').trim();
+  if (!custom) { sel.value = v; return; }
+  if (!v) { sel.value = ''; custom.value = ''; custom.hidden = true; return; }
+  const known = Array.from(sel.options).some(o => o.value === v);
+  if (known) {
+    sel.value = v;
+    custom.hidden = true;
+  } else {
+    sel.value = '__custom__';
+    custom.value = v;
+    custom.hidden = false;
+  }
+}
+
+function imageModelValue() {
+  const sel = $('aiImageModel');
+  if (!sel) return '';
+  if (sel.value === '__custom__') {
+    const custom = $('aiImageModelCustom');
+    return custom ? (custom.value || '').trim() : '';
+  }
+  return sel.value || '';
+}
+
 $('aiSettings').onclick = () => {
   const cfg = getAIConfig();
   $('aiMode').value = cfg.mode || 'vercel';
@@ -501,11 +530,11 @@ $('aiSettings').onclick = () => {
   if (/^sk-sp-/i.test(cfg.imageKey || '')) $('aiImageProvider').value = 'qianwen';
   else $('aiImageProvider').value = cfg.imageProvider || '';
   $('aiImageKey').value = cfg.imageKey || '';
-  $('aiImageModel').value = cfg.imageModel || '';
+  setImageModel(cfg.imageModel || '');
   $('aiImageBaseUrl').value = cfg.imageBaseUrl || '';
-  // 已开通 qwen-image-3.0-pro：把百炼/Token Plan 的旧默认模型自动升级为 pro
-  if ((cfg.imageProvider === 'dashscope' || cfg.imageProvider === 'qianwen') && ['', 'qwen-image', 'qwen-image-3.0'].includes((cfg.imageModel || '').trim())) {
-    $('aiImageModel').value = 'qwen-image-3.0-pro';
+  // 仅旧默认（空 / 远古 qwen-image）自动升级为 pro；用户明确选的 qwen-image-3.0 常规版保持不变
+  if ((cfg.imageProvider === 'dashscope' || cfg.imageProvider === 'qianwen') && ['', 'qwen-image'].includes((cfg.imageModel || '').trim())) {
+    setImageModel('qwen-image-3.0-pro');
   }
   applyAIPreset();
   $('aiTestStatus').textContent = '';
@@ -533,7 +562,7 @@ $('aiProvider').onchange = () => {
   renderAIModels();
   $('aiModel').value = provider.recommend || provider.model;
   $('aiBaseUrl').value = provider.base;
-  $('aiImageModel').value = provider.imageModel;
+  setImageModel(provider.imageModel);
 };
 $('aiModelSuggest').onclick = () => {
   const provider = AI_PROVIDERS[$('aiProvider').value] || AI_PROVIDERS.custom;
@@ -543,22 +572,33 @@ $('aiModelSuggest').onclick = () => {
 $('aiImageProvider').onchange = () => {
   const key = $('aiImageProvider').value;
   if (key === 'siliconflow') {
-    $('aiImageModel').value = 'black-forest-labs/FLUX.1-schnell';
+    setImageModel('black-forest-labs/FLUX.1-schnell');
     $('aiImageBaseUrl').value = 'https://api.siliconflow.cn/v1';
   } else if (key === 'dashscope') {
-    $('aiImageModel').value = 'qwen-image-3.0-pro';
+    setImageModel('qwen-image-3.0-pro');
     $('aiImageBaseUrl').value = 'https://dashscope.aliyuncs.com';
   } else if (key === 'qianwen') {
-    $('aiImageModel').value = 'qwen-image-3.0-pro';
+    setImageModel('qwen-image-3.0-pro');
     $('aiImageBaseUrl').value = 'https://token-plan.cn-beijing.maas.aliyuncs.com';
   } else if (key === 'zhipu') {
-    $('aiImageModel').value = 'cogview-4-250304';
+    setImageModel('cogview-4-250304');
     $('aiImageBaseUrl').value = 'https://open.bigmodel.cn/api/paas/v4';
   } else if (key === 'openai') {
-    $('aiImageModel').value = 'gpt-image-1';
+    setImageModel('gpt-image-1');
     $('aiImageBaseUrl').value = 'https://api.openai.com/v1';
   } else if (key === 'custom') {
+    setImageModel('__custom__');
     $('aiImageBaseUrl').value = '';
+  }
+};
+$('aiImageModel').onchange = () => {
+  const custom = $('aiImageModelCustom');
+  if (!custom) return;
+  if ($('aiImageModel').value === '__custom__') {
+    custom.hidden = false;
+    custom.focus();
+  } else {
+    custom.hidden = true;
   }
 };
 $('aiImageModelSuggest').onclick = () => {
@@ -571,7 +611,7 @@ $('aiImageModelSuggest').onclick = () => {
     openai: 'gpt-image-1'
   };
   if (suggestions[key]) {
-    $('aiImageModel').value = suggestions[key];
+    setImageModel(suggestions[key]);
     if (!key.startsWith('custom')) {
       const baseMap = {
         dashscope: 'https://dashscope.aliyuncs.com',
@@ -595,7 +635,7 @@ $('aiSave').onclick = () => {
     baseUrl: $('aiBaseUrl').value.trim(),
     imageProvider: $('aiImageProvider').value,
     imageKey: $('aiImageKey').value.trim(),
-    imageModel: $('aiImageModel').value.trim(),
+    imageModel: imageModelValue(),
     imageBaseUrl: $('aiImageBaseUrl').value.trim()
   };
   lsSet(AI_KEY, cfg);
@@ -611,7 +651,7 @@ $('aiClear').onclick = () => {
   $('aiBaseUrl').value = '';
   $('aiImageProvider').value = '';
   $('aiImageKey').value = '';
-  $('aiImageModel').value = '';
+  setImageModel('');
   $('aiImageBaseUrl').value = '';
   $('aiStatus').textContent = IS_GITHUB_PAGES ? '公网AI：未连接' : '公网AI：未连接';
   alert('已清除自填 Key 设置。');
@@ -639,10 +679,11 @@ $('kbRefresh').onclick = async () => {
 };
 $('aiClose').onclick = () => { $('aiModal').hidden = true; };
 
-// 用户已开通 qwen-image-3.0-pro：页面加载时自动把百炼的旧默认图片模型升级为 pro
+// 用户已开通 qwen-image-3.0-pro：页面加载时仅把百炼/Token Plan 的旧默认图片模型（空 / qwen-image）升级为 pro，
+// 用户明确选择的 qwen-image-3.0 常规版保持不变
 (() => {
   const cfg = getAIConfig();
-  if ((cfg.imageProvider === 'dashscope' || cfg.imageProvider === 'qianwen') && ['', 'qwen-image', 'qwen-image-3.0'].includes((cfg.imageModel || '').trim())) {
+  if ((cfg.imageProvider === 'dashscope' || cfg.imageProvider === 'qianwen') && ['', 'qwen-image'].includes((cfg.imageModel || '').trim())) {
     cfg.imageModel = 'qwen-image-3.0-pro';
     lsSet(AI_KEY, cfg);
   }
@@ -657,7 +698,7 @@ $('aiTest').onclick = async () => {
     baseUrl: $('aiBaseUrl').value.trim(),
     imageProvider: $('aiImageProvider').value,
     imageKey: $('aiImageKey').value.trim(),
-    imageModel: $('aiImageModel').value.trim(),
+    imageModel: imageModelValue(),
     imageBaseUrl: $('aiImageBaseUrl').value.trim()
   };
   if (!cfg.apiKey) return alert('先填写 API Key');
@@ -679,7 +720,7 @@ $('aiImgTest').onclick = async () => {
     baseUrl: $('aiBaseUrl').value.trim(),
     imageProvider: $('aiImageProvider').value,
     imageKey: $('aiImageKey').value.trim(),
-    imageModel: $('aiImageModel').value.trim(),
+    imageModel: imageModelValue(),
     imageBaseUrl: $('aiImageBaseUrl').value.trim()
   };
   lsSet(AI_KEY, cfg);
