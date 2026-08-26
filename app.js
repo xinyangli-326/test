@@ -2320,10 +2320,13 @@ $('aiPosterBtn').onclick = async event => {
   const instruction = cmd || `为${product}生成营销海报${needs ? `，需求：${needs}` : ''}`;
   const themeLine = cmd ? '' : `主题：${product}。`;
   const styleText = style ? `，整体风格：${style}` : '';
+  const hasRef = !!file || !!selectedKbImage;
   const ctaHint = /CTA|按钮|引导|立即|了解详情/i.test(instruction) ? '' : '；如指令未指定行动按钮，可在底部放一句引导，如「登录服务市场了解详情」';
-  const paletteText = /香槟|金色|轻奢|咖啡|深咖/.test(style)
-    ? '除非用户指定，默认使用香槟金、暖白、深咖配色。'
-    : '配色由主题与文案自然决定，丰富有层次、有明暗对比，避免全篇单一色调或一成不变的品牌色。';
+  const paletteText = hasRef
+    ? '配色、字体与整体风格严格跟随参考海报。'
+    : (/香槟|金色|轻奢|咖啡|深咖/.test(style)
+      ? '除非用户指定，默认使用香槟金、暖白、深咖配色。'
+      : '配色由主题与文案自然决定，丰富有层次、有明暗对比，避免全篇单一色调或一成不变的品牌色。');
   let psize = posterSizeInfo();
   const instSize = parseInstructionSize(instruction);
   if (instSize) {
@@ -2346,14 +2349,18 @@ $('aiPosterBtn').onclick = async event => {
   const gcd = (a, b) => (b ? gcd(b, a % b) : a);
   const ratioText = `${psize.w / gcd(psize.w, psize.h)}:${psize.h / gcd(psize.w, psize.h)}`;
   const assetTextBlock = extraText
-    ? `\n需要展示在画面中的文字内容（由 AI 自动排版，务必全部准确呈现、不得遗漏或改写）：\n${extraText}`
+    ? `\n需要展示在画面中的文字内容（由 AI 自动排版，必须全部完整呈现、不得截断、不得遗漏或改写；文字多时可缩小字号或调整行距，但一条都不能少）：\n${extraText}`
     : '';
-  const larkBg = larkRelevant(`${instruction} ${product} ${needs}`, 900, 1);
+  const larkBg = larkRelevant(`${instruction} ${product} ${needs}`, hasRef ? 300 : 900, 1);
   const larkPromptBlock = larkBg ? `\n\n【飞书内容库背景（仅作内容与卖点参考，禁止把这些文字直接复制进海报画面）】\n${larkBg}` : '';
+  const refInstruction = hasRef
+    ? '\n【参考海报要求（最高优先级）】必须严格以参考海报的风格、配色、构图和字体排版为基准，内容按指令重做，不要偏离参考图的整体风格；参考图中的主体元素可保留或按指令调整。'
+    : '';
   const prompt = `请生成一张${psize.label}${ratioText}（画布 ${psize.w}×${psize.h}）的完整酒店营销海报成品图，图片内直接包含准确的中文文字（无错别字、无乱码）。
+${refInstruction}
 ${themeLine}${styleText}
 用户指令（请严格执行）：${instruction}
-排版要求：标题醒目、卖点分条短句、信息层级清晰、高级商业广告质感${ctaHint}。${paletteText}${assetTextBlock}${larkPromptBlock}`;
+排版要求：标题醒目、卖点分条短句、信息层级清晰、高级商业广告质感${ctaHint}；所有文字必须完整显示在海报画面内，不得超出边缘或被截断。${paletteText}${assetTextBlock}${larkPromptBlock}`;
   const aspectKey = psize.ratio > 1.1 ? '16:9' : (psize.ratio < 0.9 ? '9:16' : 'square');
   const genOpts = { aspect: aspectKey, size: psize.api };
   button.textContent = 'AI生成中…';
@@ -2402,6 +2409,16 @@ ${themeLine}${styleText}
     const image = new Image();
     image.src = src;
     await image.decode();
+    // 生成图与画布比例不一致时自动匹配画布，避免 cover 裁剪截断文字
+    const imgRatio = (image.naturalWidth || image.width) / (image.naturalHeight || image.height);
+    const canvasRatio = canvas.width / canvas.height;
+    if (Math.abs(imgRatio - canvasRatio) > 0.03) {
+      if (canvas.width >= canvas.height) {
+        setPosterSize(canvas.width, Math.round(canvas.width / imgRatio));
+      } else {
+        setPosterSize(Math.round(canvas.height * imgRatio), canvas.height);
+      }
+    }
     snapshot();
     backgroundImage = image;
     backgroundInfo = { mode: 'ai-poster', style: style || '成品海报' };
@@ -2470,6 +2487,15 @@ $('aiEditBtn').onclick = async event => {
     const image = new Image();
     image.src = src;
     await image.decode();
+    const imgRatio = (image.naturalWidth || image.width) / (image.naturalHeight || image.height);
+    const canvasRatio = canvas.width / canvas.height;
+    if (Math.abs(imgRatio - canvasRatio) > 0.03) {
+      if (canvas.width >= canvas.height) {
+        setPosterSize(canvas.width, Math.round(canvas.width / imgRatio));
+      } else {
+        setPosterSize(Math.round(canvas.height * imgRatio), canvas.height);
+      }
+    }
     snapshot();
     backgroundImage = image;
     backgroundInfo = { mode: 'ai-edit' };
