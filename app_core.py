@@ -134,6 +134,9 @@ def token_plan_image(p):
     size = str(p.get("size") or "").strip()
     if size:
         parameters["size"] = size
+    negative_prompt = str(p.get("negative_prompt") or "").strip()
+    if negative_prompt:
+        parameters["negative_prompt"] = negative_prompt
     payload = {
         "model": model,
         "input": {"messages": [{"role": "user", "content": content}]},

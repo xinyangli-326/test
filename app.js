@@ -256,15 +256,18 @@ async function dashscopeImage(prompt, { aspect = 'square', reference = null, siz
   content.push({ text: prompt });
   const parameters = { watermark: false };
   if (isV3) {
-    // 完全按官方 3.0 参考：不传 size（模型按提示词自动推荐高清分辨率，pro 对 size 校验严格）、开启提示词增强
-    parameters.prompt_extend = true;
+    // 与阿里云控制台体验一致：文生图不传 size，由模型按提示词自动推荐分辨率（质量最好、跟随指令最准）；
+    // 参考图编辑传画布比例尺寸，保证编辑后仍保持当前海报尺寸
+    if (isEdit && size) parameters.size = size;
+    // 参考图编辑关闭 prompt 智能改写，避免模型改写指令导致"不按参考图生成"
+    parameters.prompt_extend = !isEdit;
   } else {
     // Token Plan 官方示例与旧版 qwen-image 都支持 size；参考图编辑时百炼 qwen-image-edit 不传 size
     if (!isEdit || isTokenPlan) {
-      parameters.size = aspect === '9:16' ? '720*1280' : (aspect === '16:9' ? '1280*720' : '1024*1024');
+      parameters.size = size || (aspect === '9:16' ? '1080*1920' : (aspect === '16:9' ? '1920*1080' : '1024*1024'));
     }
     if (!isEdit) {
-      parameters.negative_prompt = '低质量、模糊、畸形、水印、杂乱构图、乱码';
+      parameters.negative_prompt = '低质量、模糊、畸形、水印、杂乱构图、乱码、白边、白框';
     }
   }
   // Token Plan 接口未开放浏览器跨域（官方设计给服务端工具用），优先走网站自带中转；
@@ -282,6 +285,7 @@ async function dashscopeImage(prompt, { aspect = 'square', reference = null, siz
           reference: isEdit ? reference : '',
           size: parameters.size || '',
           prompt_extend: !!parameters.prompt_extend,
+          negative_prompt: parameters.negative_prompt || '',
           watermark: parameters.watermark !== false
         })
       });
@@ -342,7 +346,9 @@ async function dashscopeImage(prompt, { aspect = 'square', reference = null, siz
   if (response && !response.ok && response.status !== 401) {
     const attempts = [parameters];
     const last = attempts[attempts.length - 1];
+    if (isV3 && last.size) attempts.push({ ...last, size: undefined });
     if (isV3 && last.prompt_extend) attempts.push({ ...last, prompt_extend: false });
+    if (attempts[attempts.length - 1].negative_prompt) attempts.push({ ...attempts[attempts.length - 1], negative_prompt: undefined });
     if (attempts[attempts.length - 1].watermark) attempts.push({ ...attempts[attempts.length - 1], watermark: false });
     for (const params of attempts.slice(1)) {
       const retry = await call(usedEndpoint, params).catch(() => null);
@@ -2321,59 +2327,53 @@ $('aiPosterBtn').onclick = async event => {
   const themeLine = cmd ? '' : `主题：${product}。`;
   const styleText = style ? `，整体风格：${style}` : '';
   const hasRef = !!file || !!selectedKbImage;
-  const ctaHint = /CTA|按钮|引导|立即|了解详情/i.test(instruction) ? '' : '；如指令未指定行动按钮，可在底部放一句引导，如「登录服务市场了解详情」';
-  const paletteText = hasRef
-    ? '配色、字体与整体风格严格跟随参考海报。'
-    : (/香槟|金色|轻奢|咖啡|深咖/.test(style)
-      ? '除非用户指定，默认使用香槟金、暖白、深咖配色。'
-      : '配色由主题与文案自然决定，丰富有层次、有明暗对比，避免全篇单一色调或一成不变的品牌色。');
   let psize = posterSizeInfo();
   const instSize = parseInstructionSize(instruction);
   if (instSize) {
     if (instSize.w && instSize.h) {
       setPosterSize(instSize.w, instSize.h);
     } else if (instSize.ratio) {
-      let w;
-      let h;
-      if (instSize.ratio >= 1) {
-        w = 1280;
-        h = Math.round(1280 / instSize.ratio);
-      } else {
-        h = 1280;
-        w = Math.round(1280 * instSize.ratio);
-      }
+      // 画布直接按成品尺寸来，避免出图后再缩放导致下载偏小
+      const maxSide = instSize.ratio === 1 ? 1440 : 1920;
+      const w = instSize.ratio >= 1 ? maxSide : Math.round(maxSide * instSize.ratio);
+      const h = instSize.ratio >= 1 ? Math.round(maxSide / instSize.ratio) : maxSide;
       setPosterSize(w, h);
     }
     psize = posterSizeInfo();
   } else if (hasRef && !instSize) {
-    // 有参考图且指令未指定尺寸：按文字量自动拉长，参考图定版式、内容量定长度
+    // 有参考图且指令未指定尺寸：先按参考图本身比例定画布（参考图优先），再按文字量自动拉长
+    const refSize = await referenceNaturalSize(file || selectedKbImage);
+    if (refSize && refSize.w > 0 && refSize.h > 0) {
+      const r = refSize.w / refSize.h;
+      if (r >= 1) {
+        setPosterSize(1920, Math.round(1920 / r));
+      } else {
+        setPosterSize(Math.round(1920 * r), 1920);
+      }
+    }
     const charCount = extraText.length + instruction.length;
     if (charCount > 350) {
-      setPosterSize(Math.round(1280 * (1 / 2.2)), 1280); // 1:2.2 长图
+      setPosterSize(Math.round(1920 * (1 / 2.2)), 1920); // 1:2.2 长图
     } else if (charCount > 180) {
-      setPosterSize(Math.round(1280 * (9 / 16)), 1280); // 9:16 竖版
+      setPosterSize(Math.round(1920 * (9 / 16)), 1920); // 9:16 竖版
     }
     psize = posterSizeInfo();
   }
   const gcd = (a, b) => (b ? gcd(b, a % b) : a);
   const ratioText = `${psize.w / gcd(psize.w, psize.h)}:${psize.h / gcd(psize.w, psize.h)}`;
   const assetTextBlock = extraText
-    ? `\n需要展示在画面中的文字内容（由 AI 自动排版，必须全部完整呈现、不得截断、不得遗漏或改写；文字多时可缩小字号或调整行距，但一条都不能少）：\n${extraText}`
+    ? `\n画面内必须完整展示的文字（由你排版，一条都不能少、不能截断、不能改写）：\n${extraText}`
     : '';
-  const larkBg = larkRelevant(`${instruction} ${product} ${needs}`, hasRef ? 300 : 900, 1);
-  const larkPromptBlock = larkBg ? `\n\n【飞书内容库背景（仅作内容与卖点参考，禁止把这些文字直接复制进海报画面）】\n${larkBg}` : '';
   const refInstruction = hasRef
-    ? '\n【参考海报要求（最高优先级）】万事以参考海报为准：风格、配色、字体、版式（标题位置、卖点排版方式、按钮/CTA样式）全部严格沿用参考图，只替换/补充内容与文字，不得另起炉灶自由发挥。'
+    ? '\n【参考海报（最高优先级）】严格沿用参考海报的风格、配色、字体与版式（标题位置、卖点排版方式、按钮/CTA样式），只替换/补充内容与文字，不得另起炉灶自由发挥；若参考图比例与目标画布不同，按参考图风格自然延伸背景与版式，四周不留白边。'
     : '';
   const lengthInstruction = hasRef && extraText.length > 60
-    ? '\n【长度要求】参考图只作为风格与版式基准；本海报文字内容较多，海报整体可以比参考图更长（宽度延续参考图风格，高度按内容自然延伸拉长），确保所有文字完整放下、不压缩、不截断。'
+    ? '\n【长度要求】本海报文字内容较多，海报整体可以比参考图更长（宽度延续参考图风格，高度按内容自然延伸拉长），确保所有文字完整放下、不压缩、不截断。'
     : '';
-  const prompt = `请生成一张${psize.label}${ratioText}（画布 ${psize.w}×${psize.h}）的完整酒店营销海报成品图，图片内直接包含准确的中文文字（无错别字、无乱码）。
-${refInstruction}
-${themeLine}${styleText}
-用户指令（请严格执行）：${instruction}
-${lengthInstruction}
-排版要求：标题醒目、卖点分条短句、信息层级清晰、高级商业广告质感${ctaHint}；所有文字必须完整显示在海报画面内，不得超出边缘或被截断。${paletteText}${assetTextBlock}${larkPromptBlock}`;
+  // 与阿里云控制台体验一致：指令原样交给模型，只保留必要约束，不塞入长篇背景文本
+  const prompt = `请生成一张${psize.label}${ratioText}（画布 ${psize.w}×${psize.h}）的酒店营销海报成品图。${refInstruction}${themeLine}${styleText}
+用户指令（请严格执行）：${instruction}${lengthInstruction}${assetTextBlock}
+硬性要求：画面铺满整张图，四周无白边、白框、留白或空隙；图片内中文文字准确、无错别字、无乱码；所有文字完整显示、不得超出边缘或被截断；标题醒目、卖点清晰、信息层级分明、商业海报质感。`;
   const aspectKey = psize.ratio > 1.1 ? '16:9' : (psize.ratio < 0.9 ? '9:16' : 'square');
   const genOpts = { aspect: aspectKey, size: psize.api };
   button.textContent = 'AI生成中…';
@@ -2392,7 +2392,7 @@ ${lengthInstruction}
         const kbResp = await fetch(selectedKbImage);
         const kbBlob = await kbResp.blob();
         const kbFile = new File([kbBlob], 'kb.png', { type: kbBlob.type || 'image/png' });
-        const resized = await resizeImageFile(kbFile, 1024);
+        const resized = await resizeImageFile(kbFile, 1536);
         kbDataUrl = resized.dataUrl;
       } catch (kbError) {
         kbDataUrl = '';
@@ -2409,7 +2409,7 @@ ${lengthInstruction}
         $('aiPosterStatus').textContent = '知识库配图读取失败，已改用文字指令生成。';
       }
     } else if (file) {
-      const { dataUrl } = await resizeImageFile(file, 1024);
+      const { dataUrl } = await resizeImageFile(file, 1536);
       try {
         src = await openAILikeImage(prompt, { ...genOpts, reference: dataUrl });
       } catch (refError) {
@@ -2484,7 +2484,7 @@ $('aiEditBtn').onclick = async event => {
   button.textContent = '编辑中…';
   $('aiEditStatus').textContent = '';
   try {
-    const maxSide = 1024;
+    const maxSide = 1536;
     const scale = Math.min(1, maxSide / Math.max(canvas.width, canvas.height));
     const temp = document.createElement('canvas');
     temp.width = Math.round(canvas.width * scale);
@@ -2494,7 +2494,7 @@ $('aiEditBtn').onclick = async event => {
     const psize = posterSizeInfo();
     const gcd = (a, b) => (b ? gcd(b, a % b) : a);
     const ratioText = `${psize.w / gcd(psize.w, psize.h)}:${psize.h / gcd(psize.w, psize.h)}`;
-    const prompt = `请基于这张海报进行编辑，严格执行用户指令：${cmd}。只在必要处修改，保持整体风格协调，中文文字准确、无错别字、无乱码，${psize.label}${ratioText}（画布 ${psize.w}×${psize.h}），商业海报质感。`;
+    const prompt = `请基于这张海报进行编辑，严格执行用户指令：${cmd}。只在必要处修改，保持整体版式、风格、配色与参考海报一致；输出画面铺满整张图，四周无白边、白框、留白或空隙；中文文字准确、无错别字、无乱码，${psize.label}${ratioText}（画布 ${psize.w}×${psize.h}），商业海报质感。`;
     const aspectKey = psize.ratio > 1.1 ? '16:9' : (psize.ratio < 0.9 ? '9:16' : 'square');
     const src = await openAILikeImage(prompt, { aspect: aspectKey, reference, size: psize.api });
     const image = new Image();
@@ -2538,6 +2538,28 @@ $('aiEditBtn').onclick = async event => {
 };
 
 /* ============================ 海报AI学习 ============================ */
+
+function referenceNaturalSize(fileOrUrl) {
+  return new Promise(resolve => {
+    const img = new Image();
+    let url = '';
+    const finish = value => {
+      if (url) URL.revokeObjectURL(url);
+      resolve(value);
+    };
+    img.onload = () => finish({ w: img.naturalWidth || img.width, h: img.naturalHeight || img.height });
+    img.onerror = () => finish(null);
+    if (typeof File !== 'undefined' && fileOrUrl instanceof File) {
+      url = URL.createObjectURL(fileOrUrl);
+      img.src = url;
+    } else if (fileOrUrl) {
+      img.src = fileOrUrl;
+    } else {
+      finish(null);
+    }
+    setTimeout(() => finish(null), 8000);
+  });
+}
 
 function resizeImageFile(file, maxSide) {
   return new Promise((resolve, reject) => {
