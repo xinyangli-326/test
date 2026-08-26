@@ -986,6 +986,7 @@ $('tickerTrack').innerHTML = [...TICKER_ITEMS, ...TICKER_ITEMS]
 
 const LS = {
   profile: 'tripMall.profile',
+  structure: 'tripMall.structure',
   materials: 'tripMall.materials',
   posterStyle: 'tripMall.posterStyle',
   posterMemory: 'tripMall.posterMemory',
@@ -1478,10 +1479,12 @@ async function ensureProfile() {
   if (!profileDirty) return;
   const fullSource = profileSource();
   if (!fullSource.trim()) return;
-  const prompt = `你是资深中文文案编辑。从以下素材中提炼一份“风格画像”，让之后只凭简短提示词就能生成同风格内容。
+  const prompt = `你是资深中文文案编辑。从以下素材中提炼“风格画像”和“文章结构画像”，让之后只凭简短提示词就能生成同风格、同结构的内容。
 素材：
 ${fullSource.slice(0, 20000)}
-请输出中文风格画像，包含：1)整体语气；2)高频句式与开头方式；3)结构习惯；4)常用词与口头禅；5)内容长度与信息密度；6)最忌讳的写法（避免的AI腔）。400字以内，直接输出画像正文，不要Markdown标题。`;
+请严格按以下两个分节标题输出（不要输出其他内容）：
+【风格画像】包含：1)整体语气；2)高频句式与开头方式；3)常用词与口头禅；4)内容长度与信息密度；5)最忌讳的写法（避免的AI腔）。250字以内。
+【文章结构画像】包含：1)开头方式与钩子；2)正文如何分段落、分几部分、每部分讲什么；3)是否用小标题/列表/加粗；4)信息呈现顺序；5)结尾方式与CTA引导。250字以内。`;
   try {
     let profile;
     if (hasByok()) {
@@ -1495,8 +1498,18 @@ ${fullSource.slice(0, 20000)}
         profile = await puterChat(prompt);
       }
     }
-    $('profileBox').value = profile.trim();
-    lsSet(LS.profile, profile.trim());
+    const raw = profile.trim();
+    const splitIdx = raw.indexOf('【文章结构画像】');
+    let structure = '';
+    let style = raw;
+    if (splitIdx > -1) {
+      structure = raw.slice(splitIdx).replace(/^【文章结构画像】\s*/, '').trim();
+      style = raw.slice(0, splitIdx).replace(/^【风格画像】\s*/, '').trim();
+    }
+    $('profileBox').value = style;
+    lsSet(LS.profile, style);
+    $('structureBox').value = structure;
+    lsSet(LS.structure, structure);
     profileDirty = false;
   } catch {}
 }
@@ -1507,11 +1520,13 @@ $('learnReset').onclick = () => {
   drafts = [];
   localStorage.removeItem(LS.materials);
   localStorage.removeItem(LS.profile);
+  localStorage.removeItem(LS.structure);
   localStorage.removeItem(LS.posterStyle);
   localStorage.removeItem(LS.posterMemory);
   localStorage.removeItem(LS.drafts);
   posterMemory = [];
   $('profileBox').value = '';
+  $('structureBox').value = '';
   profileDirty = true;
   renderLearnList();
   renderPosterMemory();
@@ -1521,6 +1536,8 @@ $('learnReset').onclick = () => {
 
 $('profileBox').value = lsGet(LS.profile, '');
 $('profileBox').oninput = () => { lsSet(LS.profile, $('profileBox').value); profileDirty = false; };
+$('structureBox').value = lsGet(LS.structure, '');
+$('structureBox').oninput = () => { lsSet(LS.structure, $('structureBox').value); };
 $('samples').oninput = () => { profileDirty = true; };
 renderLearnList();
 
@@ -1588,10 +1605,10 @@ const CHANNEL_RULES = {
 };
 
 const CHANNEL_FORMATS = {
-  '朋友圈': '输出3条朋友圈文案：每条以「朋友圈①」「朋友圈②」「朋友圈③」开头，每条150-250字，分2-3个短段落，有具体场景和小故事感，结尾一句自然引导，不硬广。只输出这3条文案本身，不要输出任何其他分析或说明。',
-  '社群运营': '输出1条社群运营文案：150-200字，像真实运营者在群里自然说话，有活人感、允许口语化和语气词，结尾自然引导互动。只输出这条文案本身。',
-  '小红书': '输出1篇完整小红书笔记：标题（带emoji、15字左右）+正文（600-1000字，真实体验感、分小节）+结尾5个话题标签。只输出笔记本身。',
-  '公众号': '输出1篇公众号文章：10-20字标题、80字内导语、1200-2000字正文（分小节）、结尾CTA。',
+  '朋友圈': '输出3条朋友圈文案：每条以「朋友圈①」「朋友圈②」「朋友圈③」开头，默认每条150-250字（若用户明确指定字数则严格按用户字数执行），分2-3个短段落，有具体场景和小故事感，结尾一句自然引导，不硬广。只输出这3条文案本身，不要输出任何其他分析或说明。',
+  '社群运营': '输出1条社群运营文案：默认150-200字（若用户明确指定字数则严格按用户字数执行），像真实运营者在群里自然说话，有活人感、允许口语化和语气词，结尾自然引导互动。只输出这条文案本身。',
+  '小红书': '输出1篇完整小红书笔记：标题（带emoji、15字左右）+正文（默认600-1000字，若用户明确指定字数则严格按用户字数执行，真实体验感、分小节）+结尾5个话题标签。只输出笔记本身。',
+  '公众号': '输出1篇公众号文章：10-20字标题、80字内导语、正文（默认1200-2000字，若用户明确指定字数则严格按用户字数执行，分小节）、结尾CTA。',
   '销售话术': '输出销售话术：按「开场→需求挖掘→异议处理→促成」的顺序，写成能直接对客户说出口的话，标注每一段的话术目的。',
   '短视频口播': '输出短视频口播脚本：开头钩子（3秒内）+正文3-5个节奏点+结尾引导，每句标注画面建议。',
   '内部提案': '输出内部提案：背景→方案→预算参考→风险→下一步，结构完整、可直接汇报。'
@@ -1694,23 +1711,30 @@ function buildSystemPrompt(payload) {
 
 function buildTaskPrompt(payload) {
   const wantsCompare = /对比|比较|分析|竞品|哪个好|哪家好|品牌推荐|选型|区别|差异|怎么选/.test(String(payload.needs || '') + String(payload.product || '') + String(payload.content_type || ''));
+  const needsText = String(payload.needs || '');
+  const wordMatch = needsText.match(/(\d{2,4})\s*(?:字|字左右|字以内|字以上|字上下)/);
+  const wordRequirement = wordMatch
+    ? `\n\n【字数要求（最高优先级，覆盖渠道默认字数）】用户明确指定字数：${wordMatch[1]}字左右。必须严格按此字数输出，允许±10%偏差，宁缺毋滥不凑字。`
+    : '';
   return `请为以下任务输出内容：
 产品/主题：${payload.product}
 目标视角：${payload.persona}
 发布渠道/文章类型：${payload.channel}
 内容类型：${payload.content_type}
-生成需求（个性化要求，务必逐一满足）：${payload.needs || '无'}
+生成需求（个性化要求，务必逐一满足，含字数要求）：${needsText || '无'}
 联网研究：${payload.research || '无'}
 文章风格样本：${String(payload.style_samples || '').slice(0, 12000)}
 风格画像（AI学习总结，生成时严格遵循其语气、句式与结构习惯）：${String(payload.profile || '').slice(0, 6000)}
+文章结构画像（AI从素材学习，生成时严格遵循其结构框架：开头钩子、段落组织、小标题/列表用法、信息顺序、结尾CTA）：${String(payload.structure || '').slice(0, 4000)}
 用户学习素材摘要（提炼要点融入，不要照抄原文）：${String(payload.materials || '').slice(0, 8000)}
 
 【输出格式（必须严格遵守，逐字执行）】
 ${CHANNEL_FORMATS[payload.channel] || '按其使用场景输出完整成稿。'}
+${wordRequirement}
 
 【硬性要求】
 1. 直接输出正文，禁止以“好的”“以下是为您准备的”“根据您的需求”等开头。
-2. 禁止复述或总结用户需求；禁止空话、套话、车轱辘话凑字数——字数宁短勿水，严格卡在格式要求范围内。
+2. 禁止复述或总结用户需求；禁止空话、套话、车轱辘话凑字数——字数以用户指令为准：用户明确指定字数时严格按指定字数，未指定时按渠道默认，宁短勿水。
 3. 站在服务市场/商家面向酒店客户的角度展开（除非用户明确要求酒店视角）。
 4. 若用户给出已有文案或细节要求（调整细节、强调IP、强调功能、强调价格），先理解原意再改写，不丢失关键信息。
 5. 内部数字写成参考值，不编造平台规则；避免“值得注意的是”“综上所述”“在这个…的时代”等AI腔。
@@ -1738,6 +1762,7 @@ $('generate').onclick = async event => {
     research,
     style_samples: $('samples').value,
     profile: $('profileBox').value,
+    structure: $('structureBox').value,
     materials: checkedMaterialsText()
   };
   const deepThink = $('deepThink').checked;
@@ -1759,6 +1784,11 @@ $('generate').onclick = async event => {
       }
     }
     $('result').textContent = content;
+    lastCopy = content;
+    lastCopyOriginal = content;
+    $('copyEditBar').hidden = false;
+    $('copyEditRevert').hidden = true;
+    $('copyEditCmd').value = '';
     saveCopyHistory({
       category: payload.category,
       product: payload.product,
@@ -1775,6 +1805,46 @@ $('generate').onclick = async event => {
   } finally {
     button.textContent = '生成具体内容 →';
   }
+};
+
+/* AI 编辑已生成文案：按用户指令修改（不是手动修改） */
+let lastCopy = '';
+let lastCopyOriginal = '';
+
+$('copyEditBtn').onclick = async () => {
+  const cmd = $('copyEditCmd').value.trim();
+  if (!lastCopy) return alert('请先生成文案');
+  if (!cmd) return alert('先输入修改指令');
+  const btn = $('copyEditBtn');
+  btn.textContent = 'AI修改中…';
+  btn.disabled = true;
+  try {
+    const system = '你是资深中文文案编辑。根据用户指令对原文进行修改：保留原文核心信息与平台立场，只按指令调整（语气、结构、字数、细节、卖点顺序等），不要复述指令，直接输出修改后的完整文案，不要加任何说明。';
+    const user = `原文：\n${lastCopy}\n\n修改指令：${cmd}\n\n直接输出修改后的完整文案。`;
+    let edited;
+    if (hasByok()) {
+      edited = await openAILikeChat(system, user, { maxTokens: 9000 });
+    } else {
+      if (IS_GITHUB_PAGES) await ensurePuterAuth();
+      edited = await puterChat(system + '\n\n' + user);
+    }
+    $('result').textContent = edited;
+    lastCopy = edited;
+    $('copyEditRevert').hidden = false;
+    $('copyEditCmd').value = '';
+  } catch (error) {
+    alert(`AI修改失败：${error.message}`);
+  } finally {
+    btn.textContent = '✏️ AI 修改';
+    btn.disabled = false;
+  }
+};
+
+$('copyEditRevert').onclick = () => {
+  $('result').textContent = lastCopyOriginal;
+  lastCopy = lastCopyOriginal;
+  $('copyEditRevert').hidden = true;
+  $('copyEditCmd').value = '';
 };
 
 /* ============================ 海报画布 ============================ */

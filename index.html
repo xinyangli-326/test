@@ -124,6 +124,8 @@
       <label>手动粘贴文章风格样本</label>
       <textarea id="samples" rows="5" placeholder="粘贴公众号文章正文，或点击联网研究后自动填入"></textarea>
       <textarea id="profileBox" rows="4" hidden placeholder="风格画像（系统自动记忆）"></textarea>
+      <label>文章结构画像（系统自动从素材学习：开头方式、段落组织、小标题、结尾CTA等，无需手动填）</label>
+      <textarea id="structureBox" rows="3" hidden placeholder="文章结构画像（系统自动记忆）"></textarea>
     </details>
 
     <div class="gen-row">
@@ -141,6 +143,11 @@
       <div class="prog-track"><div class="prog-fill" id="copyProgressFill"></div></div>
     </div>
     <div id="result"></div>
+    <div class="ai-edit-bar" id="copyEditBar" hidden>
+      <input id="copyEditCmd" type="text" placeholder="对已生成文案下达修改指令，如：语气更活泼、把开头改成提问式、加一段采购小贴士、缩短到200字…">
+      <button id="copyEditBtn" type="button">✏️ AI 修改</button>
+      <button id="copyEditRevert" type="button" hidden>↩ 恢复原文</button>
+    </div>
   </section>
 
   <section id="poster" class="panel reveal">
