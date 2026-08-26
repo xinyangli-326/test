@@ -2286,15 +2286,31 @@ function parseInstructionSize(text) {
     const b = +m[2];
     if (a > 0 && b > 0) return { ratio: a / b, label: a > b ? '横版' : (a < b ? '竖版' : '方形') };
   }
+  if (/超长图|超长|长图|长条图/.test(t)) return { ratio: 1 / 2.2, label: '竖版长图' };
   if (/竖版|9:16|垂直|纵向/.test(t)) return { ratio: 9 / 16, label: '竖版' };
   if (/横版|16:9|水平|横向/.test(t)) return { ratio: 16 / 9, label: '横版' };
   if (/方形|正方|1:1/.test(t)) return { ratio: 1, label: '方形' };
   return null;
 }
 
+/* 按历史实际生成耗时动态预估进度条时长：第二次起进度条与实际等待时间基本同步 */
+const imageGenDurations = [];
+
+function estimateImageDuration() {
+  if (!imageGenDurations.length) return 90000;
+  const avg = imageGenDurations.reduce((a, b) => a + b, 0) / imageGenDurations.length;
+  return Math.min(240000, Math.max(30000, Math.round(avg * 1.2)));
+}
+
+function recordImageDuration(ms) {
+  imageGenDurations.push(ms);
+  if (imageGenDurations.length > 5) imageGenDurations.shift();
+}
+
 $('aiPosterBtn').onclick = async event => {
   const button = event.currentTarget;
-  const progress = startProgress('aiPosterProgress', 90000);
+  const t0 = Date.now();
+  const progress = startProgress('aiPosterProgress', estimateImageDuration());
   const file = $('aiPosterRef').files[0];
   const cmd = $('aiPosterCmd').value.trim();
   const extraText = $('aiPosterText').value.trim();
@@ -2409,6 +2425,7 @@ ${themeLine}${styleText}
     $('aiPosterStatus').textContent = `生成失败：${error.message}`;
     progress.fail();
   } finally {
+    recordImageDuration(Date.now() - t0);
     button.textContent = '🪄 AI 生成成品海报';
   }
 };
@@ -2416,7 +2433,8 @@ ${themeLine}${styleText}
 /* 编辑 AI 海报：把当前画布海报作为参考图，按指令修改 */
 $('aiEditBtn').onclick = async event => {
   const button = event.currentTarget;
-  const progress = startProgress('aiEditProgress', 60000);
+  const t0 = Date.now();
+  const progress = startProgress('aiEditProgress', estimateImageDuration());
   const cmd = $('aiEditCmd').value.trim();
   if (!cmd) {
     progress.stop();
@@ -2475,6 +2493,7 @@ $('aiEditBtn').onclick = async event => {
     $('aiEditStatus').textContent = `编辑失败：${error.message}`;
     progress.fail();
   } finally {
+    recordImageDuration(Date.now() - t0);
     button.textContent = '✏️ 按指令编辑当前海报';
   }
 };
