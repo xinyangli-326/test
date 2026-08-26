@@ -2345,6 +2345,15 @@ $('aiPosterBtn').onclick = async event => {
       setPosterSize(w, h);
     }
     psize = posterSizeInfo();
+  } else if (hasRef && !instSize) {
+    // 有参考图且指令未指定尺寸：按文字量自动拉长，参考图定版式、内容量定长度
+    const charCount = extraText.length + instruction.length;
+    if (charCount > 350) {
+      setPosterSize(Math.round(1280 * (1 / 2.2)), 1280); // 1:2.2 长图
+    } else if (charCount > 180) {
+      setPosterSize(Math.round(1280 * (9 / 16)), 1280); // 9:16 竖版
+    }
+    psize = posterSizeInfo();
   }
   const gcd = (a, b) => (b ? gcd(b, a % b) : a);
   const ratioText = `${psize.w / gcd(psize.w, psize.h)}:${psize.h / gcd(psize.w, psize.h)}`;
@@ -2354,12 +2363,16 @@ $('aiPosterBtn').onclick = async event => {
   const larkBg = larkRelevant(`${instruction} ${product} ${needs}`, hasRef ? 300 : 900, 1);
   const larkPromptBlock = larkBg ? `\n\n【飞书内容库背景（仅作内容与卖点参考，禁止把这些文字直接复制进海报画面）】\n${larkBg}` : '';
   const refInstruction = hasRef
-    ? '\n【参考海报要求（最高优先级）】必须严格以参考海报的风格、配色、构图和字体排版为基准，内容按指令重做，不要偏离参考图的整体风格；参考图中的主体元素可保留或按指令调整。'
+    ? '\n【参考海报要求（最高优先级）】万事以参考海报为准：风格、配色、字体、版式（标题位置、卖点排版方式、按钮/CTA样式）全部严格沿用参考图，只替换/补充内容与文字，不得另起炉灶自由发挥。'
+    : '';
+  const lengthInstruction = hasRef && extraText.length > 60
+    ? '\n【长度要求】参考图只作为风格与版式基准；本海报文字内容较多，海报整体可以比参考图更长（宽度延续参考图风格，高度按内容自然延伸拉长），确保所有文字完整放下、不压缩、不截断。'
     : '';
   const prompt = `请生成一张${psize.label}${ratioText}（画布 ${psize.w}×${psize.h}）的完整酒店营销海报成品图，图片内直接包含准确的中文文字（无错别字、无乱码）。
 ${refInstruction}
 ${themeLine}${styleText}
 用户指令（请严格执行）：${instruction}
+${lengthInstruction}
 排版要求：标题醒目、卖点分条短句、信息层级清晰、高级商业广告质感${ctaHint}；所有文字必须完整显示在海报画面内，不得超出边缘或被截断。${paletteText}${assetTextBlock}${larkPromptBlock}`;
   const aspectKey = psize.ratio > 1.1 ? '16:9' : (psize.ratio < 0.9 ? '9:16' : 'square');
   const genOpts = { aspect: aspectKey, size: psize.api };
