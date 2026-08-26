@@ -1,5 +1,6 @@
 {
   "version": 2,
+  "maxDuration": 60,
   "builds": [
     { "src": "api/index.py", "use": "@vercel/python" }
   ],

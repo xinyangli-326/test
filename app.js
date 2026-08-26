@@ -237,7 +237,7 @@ async function openAILikeChat(system, user, { maxTokens = 3000, temperature = 0.
   return content;
 }
 
-async function dashscopeImage(prompt, { aspect = 'square', reference = null, size = '' } = {}) {
+async function dashscopeImage(prompt, { aspect = 'square', reference = null, size = '', strictRef = false } = {}) {
   const img = getImageConfig();
   const isTokenPlan = img.provider === 'qianwen';
   const providerLabel = isTokenPlan ? 'Token Plan' : '百炼';
@@ -256,11 +256,9 @@ async function dashscopeImage(prompt, { aspect = 'square', reference = null, siz
   content.push({ text: prompt });
   const parameters = { watermark: false };
   if (isV3) {
-    // 与阿里云控制台体验一致：文生图不传 size，由模型按提示词自动推荐分辨率（质量最好、跟随指令最准）；
-    // 参考图编辑传画布比例尺寸，保证编辑后仍保持当前海报尺寸
-    if (isEdit && size) parameters.size = size;
-    // 参考图编辑关闭 prompt 智能改写，避免模型改写指令导致"不按参考图生成"
-    parameters.prompt_extend = !isEdit;
+    // 与阿里云控制台默认一致：不传 size，由模型 auto 推荐分辨率（生成与 AI 编辑都如此，不锁尺寸）
+    // 一键生成带参考图时关闭 prompt 智能改写，保证严格跟随参考图；AI 编辑保持控制台默认（不传 prompt_extend）
+    if (isEdit && strictRef) parameters.prompt_extend = false;
   } else {
     // Token Plan 官方示例与旧版 qwen-image 都支持 size；参考图编辑时百炼 qwen-image-edit 不传 size
     if (!isEdit || isTokenPlan) {
@@ -449,10 +447,10 @@ async function toSafeDataURL(src) {
   }
 }
 
-async function openAILikeImage(prompt, { aspect = 'square', reference = null, size = '' } = {}) {
+async function openAILikeImage(prompt, { aspect = 'square', reference = null, size = '', strictRef = false } = {}) {
   const img = getImageConfig();
   if (!img) throw new Error(imageConfigError());
-  if (img.provider === 'dashscope' || img.provider === 'qianwen') return dashscopeImage(prompt, { aspect, reference, size });
+  if (img.provider === 'dashscope' || img.provider === 'qianwen') return dashscopeImage(prompt, { aspect, reference, size, strictRef });
   if (reference) throw new Error('参考图编辑仅支持阿里云百炼 / 千问AI平台 Token Plan（qwen-image-3.0 / qwen-image-3.0-pro / qwen-image-2.0-pro），请在图片服务商里选择百炼或 Token Plan');
   const base = img.base.replace(/\/+$/, '');
   const model = img.model;
@@ -2399,7 +2397,7 @@ $('aiPosterBtn').onclick = async event => {
       }
       if (kbDataUrl) {
         try {
-          src = await openAILikeImage(prompt, { ...genOpts, reference: kbDataUrl });
+          src = await openAILikeImage(prompt, { ...genOpts, reference: kbDataUrl, strictRef: true });
         } catch (refError) {
           src = await openAILikeImage(prompt, genOpts);
           $('aiPosterStatus').textContent = `知识库配图编辑不可用（${refError.message}），已改用文字指令生成。`;
@@ -2411,7 +2409,7 @@ $('aiPosterBtn').onclick = async event => {
     } else if (file) {
       const { dataUrl } = await resizeImageFile(file, 1536);
       try {
-        src = await openAILikeImage(prompt, { ...genOpts, reference: dataUrl });
+        src = await openAILikeImage(prompt, { ...genOpts, reference: dataUrl, strictRef: true });
       } catch (refError) {
         src = await openAILikeImage(prompt, genOpts);
         $('aiPosterStatus').textContent = `参考图编辑不可用（${refError.message}），已改用文字指令生成。`;
@@ -2484,7 +2482,8 @@ $('aiEditBtn').onclick = async event => {
   button.textContent = '编辑中…';
   $('aiEditStatus').textContent = '';
   try {
-    const maxSide = 1536;
+    // 参考图压缩到 1280 以内：保证清晰度的同时降低中转体积与耗时，避免超出 Vercel 60s 上限
+    const maxSide = 1280;
     const scale = Math.min(1, maxSide / Math.max(canvas.width, canvas.height));
     const temp = document.createElement('canvas');
     temp.width = Math.round(canvas.width * scale);
@@ -2496,7 +2495,8 @@ $('aiEditBtn').onclick = async event => {
     const ratioText = `${psize.w / gcd(psize.w, psize.h)}:${psize.h / gcd(psize.w, psize.h)}`;
     const prompt = `请基于这张海报进行编辑，严格执行用户指令：${cmd}。只在必要处修改，保持整体版式、风格、配色与参考海报一致；输出画面铺满整张图，四周无白边、白框、留白或空隙；中文文字准确、无错别字、无乱码，${psize.label}${ratioText}（画布 ${psize.w}×${psize.h}），商业海报质感。`;
     const aspectKey = psize.ratio > 1.1 ? '16:9' : (psize.ratio < 0.9 ? '9:16' : 'square');
-    const src = await openAILikeImage(prompt, { aspect: aspectKey, reference, size: psize.api });
+    // AI 编辑与阿里云控制台默认一致：不锁尺寸，由模型 auto 推荐输出分辨率
+    const src = await openAILikeImage(prompt, { aspect: aspectKey, reference });
     const image = new Image();
     image.src = src;
     await image.decode();

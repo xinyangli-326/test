@@ -143,11 +143,8 @@ def token_plan_image(p):
         "parameters": parameters,
     }
     url = TOKEN_PLAN_BASE + "/api/v1/services/aigc/multimodal-generation/generation"
-    try:
-        resp = _token_plan_call(url, api_key, payload, timeout=180)
-    except Exception:
-        # 接口排队/临时慢时自动重试一次（常见于高峰期）
-        resp = _token_plan_call(url, api_key, payload, timeout=180)
+    # 注意：Vercel Hobby 函数上限 60s，超过会被直接掐断；不在此处重试，避免慢速成功时重复扣费
+    resp = _token_plan_call(url, api_key, payload, timeout=175)
     if resp.status_code != 200:
         raise RuntimeError(_token_plan_error(resp, "图片"))
     data = resp.json()
