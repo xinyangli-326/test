@@ -2385,11 +2385,9 @@ $('aiPosterBtn').onclick = async event => {
   const file = $('aiPosterRef').files[0];
   const cmd = $('aiPosterCmd').value.trim();
   const extraText = $('aiPosterText').value.trim();
-  const style = $('aiPosterStyle').value;
-  // 海报只使用海报区自己的输入（指令/补充文字/风格/参考图）。
+  // 海报只使用海报区自己的输入（指令/补充文字/参考图），无风格下拉、无任何自动注入。
   // 不再自动带入主界面的产品/需求字段，避免"没写却生成相关内容"的乱生成。
   const instruction = cmd;
-  const styleText = style ? `整体风格：${style}。` : '';
   const hasRef = !!file || !!selectedKbImage;
   let psize = posterSizeInfo();
   const instSize = parseInstructionSize(instruction);
@@ -2436,7 +2434,7 @@ $('aiPosterBtn').onclick = async event => {
     : '';
   // 与阿里云控制台体验一致：指令原样交给模型，只保留必要约束，不塞入长篇背景文本；
   // 不写死像素，只给比例，由模型 auto 推荐分辨率（更快，且与控制台一致）
-  const prompt = `请生成一张${psize.label}${ratioText}的酒店营销海报成品图，输出比例严格为${ratioText}。${refInstruction}${styleText}
+  const prompt = `请生成一张${psize.label}${ratioText}的酒店营销海报成品图，输出比例严格为${ratioText}。${refInstruction}
 用户指令（请严格执行）：${instruction}${lengthInstruction}${assetTextBlock}
 硬性要求：画面铺满整张图，四周无白边、白框、留白或空隙；图片内中文文字准确、无错别字、无乱码；所有文字完整显示、不得超出边缘或被截断；标题醒目、卖点清晰、信息层级分明、商业海报质感。`;
   const aspectKey = psize.ratio > 1.1 ? '16:9' : (psize.ratio < 0.9 ? '9:16' : 'square');
@@ -2505,7 +2503,7 @@ $('aiPosterBtn').onclick = async event => {
     }
     snapshot();
     backgroundImage = image;
-    backgroundInfo = { mode: 'ai-poster', style: style || '成品海报' };
+    backgroundInfo = { mode: 'ai-poster' };
     objects = objects.filter(object => object.type !== 'text');
     selected = null;
     draw();
@@ -2514,7 +2512,6 @@ $('aiPosterBtn').onclick = async event => {
       type: 'ai-poster',
       instruction,
       prompt,
-      style: style || '跟随指令',
       engine: `${imgCfg.model}${(imgCfg.provider === 'dashscope' || imgCfg.provider === 'qianwen') && file ? '·参考图编辑' : ''}`,
       width: canvas.width,
       height: canvas.height,
