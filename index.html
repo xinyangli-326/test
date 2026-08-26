@@ -194,6 +194,7 @@
                 </select></div>
               <button id="aiPosterBtn" class="primary" type="button">🪄 AI 生成成品海报</button>
               <div id="aiPosterStatus"></div>
+              <div id="posterEngineLine" class="hint"></div>
               <div class="progress" id="aiPosterProgress" hidden>
                 <div class="prog-head">
                   <span class="prog-label">AI 正在绘制海报…</span>
@@ -427,7 +428,7 @@
       <select id="aiImageProvider">
         <option value="">跟随文字服务商</option>
         <option value="siliconflow">硅基流动（FLUX 等）</option>
-        <option value="dashscope">阿里云百炼（Qwen-Image 3.0，支持参考图编辑）</option>
+        <option value="dashscope">阿里云百炼（qwen-image-3.0 / 3.0-pro 直连，支持参考图编辑）</option>
         <option value="qianwen">千问AI平台 Token Plan（月付套餐）</option>
         <option value="zhipu">智谱 CogView</option>
         <option value="openai">OpenAI（gpt-image-1）</option>

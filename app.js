@@ -140,7 +140,7 @@ function getImageConfig() {
   const base = providerKey === 'qianwen'
     ? (String(cfg.imageBaseUrl || '').includes('token-plan') ? cfg.imageBaseUrl : 'https://token-plan.cn-beijing.maas.aliyuncs.com')
     : (cfg.imageBaseUrl || provider.base);
-  const model = cfg.imageModel || (providerKey === 'qianwen' ? 'qwen-image-3.0-pro' : provider.imageModel);
+  const model = cfg.imageModel || (providerKey === 'qianwen' || providerKey === 'dashscope' ? 'qwen-image-3.0-pro' : provider.imageModel);
   if (!model) return null;
   return { provider: providerKey, base, key, model };
 }
@@ -256,11 +256,9 @@ async function dashscopeImage(prompt, { aspect = 'square', reference = null, siz
   content.push({ text: prompt });
   const parameters = { watermark: false };
   if (isV3) {
-    // 不传 size，由模型 auto 推荐分辨率（生成与 AI 编辑都如此，不锁尺寸）
-    // 关闭 prompt 智能改写：我们的指令已足够详细，改写会把要展示的中文文字带偏导致乱码；
-    // 反向提示词直接抑制乱码/错别字/模糊文字（qwen-image-3.0 官方支持，用于文字类生成）
-    parameters.prompt_extend = false;
-    parameters.negative_prompt = '乱码、错别字、模糊文字、扭曲文字、水印';
+    // 严格对齐阿里云控制台生成海报的初始设置：
+    // 不传 size（分辨率由模型 auto 推荐）、不传 prompt_extend / negative_prompt 等自定义参数，
+    // 只发 model + 指令，跟官网试用完全一致（qwen-image-3.0 / 3.0-pro 通用）
   } else {
     // Token Plan 官方示例与旧版 qwen-image 都支持 size；参考图编辑时百炼 qwen-image-edit 不传 size
     if (!isEdit || isTokenPlan) {
@@ -284,7 +282,7 @@ async function dashscopeImage(prompt, { aspect = 'square', reference = null, siz
           prompt,
           reference: isEdit ? reference : '',
           size: parameters.size || '',
-          prompt_extend: !!parameters.prompt_extend,
+          prompt_extend: parameters.prompt_extend === undefined ? undefined : !!parameters.prompt_extend,
           negative_prompt: parameters.negative_prompt || '',
           watermark: parameters.watermark !== false
         })
@@ -490,6 +488,19 @@ function updateAIStatus() {
   }
 }
 
+/* 海报区实时显示"实际连接的图片引擎"，避免选了 pro 却连到普通版还不自知 */
+function updatePosterEngineLine() {
+  const el = $('posterEngineLine');
+  if (!el) return;
+  const img = getImageConfig();
+  if (!img) {
+    el.textContent = '当前图片引擎：未配置（请在 AI 设置 → 图片生成 选择阿里云百炼并保存）';
+    return;
+  }
+  const mode = img.provider === 'qianwen' ? 'Token Plan 中转' : '百炼直连';
+  el.textContent = `当前图片引擎：${img.model}（${mode}）—— 与阿里云控制台同参数直连`;
+}
+
 /* 图片模型：下拉选项与"自定义模型"输入框联动 */
 function setImageModel(value) {
   const sel = $('aiImageModel');
@@ -564,7 +575,8 @@ $('aiProvider').onchange = () => {
   renderAIModels();
   $('aiModel').value = provider.recommend || provider.model;
   $('aiBaseUrl').value = provider.base;
-  setImageModel(provider.imageModel);
+  // 仅当图片服务商是「跟随文字服务商」时才联动图片模型，避免覆盖用户已单独选好的 pro/常规版
+  if (!$('aiImageProvider').value) setImageModel(provider.imageModel);
 };
 $('aiModelSuggest').onclick = () => {
   const provider = AI_PROVIDERS[$('aiProvider').value] || AI_PROVIDERS.custom;
@@ -642,6 +654,7 @@ $('aiSave').onclick = () => {
   };
   lsSet(AI_KEY, cfg);
   updateAIStatus();
+  updatePosterEngineLine();
   $('aiModal').hidden = true;
   if (cfg.mode === 'byok' && !cfg.apiKey) alert('已保存，但 API Key 为空——生成时会自动回退到其他方式。');
   else alert('AI 接入设置已保存。');
@@ -735,6 +748,7 @@ $('aiImgTest').onclick = async () => {
   }
 };
 updateAIStatus();
+updatePosterEngineLine();
 
 function extractJson(text) {
   const cleaned = String(text || '')
