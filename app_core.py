@@ -139,11 +139,12 @@ def token_plan_image(p):
         "input": {"messages": [{"role": "user", "content": content}]},
         "parameters": parameters,
     }
-    resp = _token_plan_call(
-        TOKEN_PLAN_BASE + "/api/v1/services/aigc/multimodal-generation/generation",
-        api_key,
-        payload,
-    )
+    url = TOKEN_PLAN_BASE + "/api/v1/services/aigc/multimodal-generation/generation"
+    try:
+        resp = _token_plan_call(url, api_key, payload, timeout=180)
+    except Exception:
+        # 接口排队/临时慢时自动重试一次（常见于高峰期）
+        resp = _token_plan_call(url, api_key, payload, timeout=180)
     if resp.status_code != 200:
         raise RuntimeError(_token_plan_error(resp, "图片"))
     data = resp.json()
