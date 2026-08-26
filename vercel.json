@@ -1,6 +1,7 @@
 {
   "version": 2,
   "maxDuration": 60,
+  "regions": ["hkg1"],
   "builds": [
     { "src": "api/index.py", "use": "@vercel/python" }
   ],

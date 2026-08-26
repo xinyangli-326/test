@@ -2301,7 +2301,7 @@ function parseInstructionSize(text) {
 const imageGenDurations = [];
 
 function estimateImageDuration() {
-  if (!imageGenDurations.length) return 90000;
+  if (!imageGenDurations.length) return 50000;
   const avg = imageGenDurations.reduce((a, b) => a + b, 0) / imageGenDurations.length;
   return Math.min(240000, Math.max(30000, Math.round(avg * 1.2)));
 }
@@ -2368,8 +2368,9 @@ $('aiPosterBtn').onclick = async event => {
   const lengthInstruction = hasRef && extraText.length > 60
     ? '\n【长度要求】本海报文字内容较多，海报整体可以比参考图更长（宽度延续参考图风格，高度按内容自然延伸拉长），确保所有文字完整放下、不压缩、不截断。'
     : '';
-  // 与阿里云控制台体验一致：指令原样交给模型，只保留必要约束，不塞入长篇背景文本
-  const prompt = `请生成一张${psize.label}${ratioText}（画布 ${psize.w}×${psize.h}）的酒店营销海报成品图。${refInstruction}${themeLine}${styleText}
+  // 与阿里云控制台体验一致：指令原样交给模型，只保留必要约束，不塞入长篇背景文本；
+  // 不写死像素，只给比例，由模型 auto 推荐分辨率（更快，且与控制台一致）
+  const prompt = `请生成一张${psize.label}${ratioText}的酒店营销海报成品图，输出比例严格为${ratioText}。${refInstruction}${themeLine}${styleText}
 用户指令（请严格执行）：${instruction}${lengthInstruction}${assetTextBlock}
 硬性要求：画面铺满整张图，四周无白边、白框、留白或空隙；图片内中文文字准确、无错别字、无乱码；所有文字完整显示、不得超出边缘或被截断；标题醒目、卖点清晰、信息层级分明、商业海报质感。`;
   const aspectKey = psize.ratio > 1.1 ? '16:9' : (psize.ratio < 0.9 ? '9:16' : 'square');
@@ -2493,7 +2494,7 @@ $('aiEditBtn').onclick = async event => {
     const psize = posterSizeInfo();
     const gcd = (a, b) => (b ? gcd(b, a % b) : a);
     const ratioText = `${psize.w / gcd(psize.w, psize.h)}:${psize.h / gcd(psize.w, psize.h)}`;
-    const prompt = `请基于这张海报进行编辑，严格执行用户指令：${cmd}。只在必要处修改，保持整体版式、风格、配色与参考海报一致；输出画面铺满整张图，四周无白边、白框、留白或空隙；中文文字准确、无错别字、无乱码，${psize.label}${ratioText}（画布 ${psize.w}×${psize.h}），商业海报质感。`;
+    const prompt = `请基于这张海报进行编辑，严格执行用户指令：${cmd}。只在必要处修改，保持整体版式、风格、配色与参考海报一致；输出画面铺满整张图，四周无白边、白框、留白或空隙；中文文字准确、无错别字、无乱码，${psize.label}${ratioText}，商业海报质感。`;
     const aspectKey = psize.ratio > 1.1 ? '16:9' : (psize.ratio < 0.9 ? '9:16' : 'square');
     // AI 编辑与阿里云控制台默认一致：不锁尺寸，由模型 auto 推荐输出分辨率
     const src = await openAILikeImage(prompt, { aspect: aspectKey, reference });
