@@ -2368,6 +2368,16 @@ function recordImageDuration(ms) {
   if (imageGenDurations.length > 5) imageGenDurations.shift();
 }
 
+/* 每张海报独立：生成结束后清空参考图（上传文件 + 知识库配图），
+   避免上一次的参考图"残留记忆"影响下一次生成 */
+function clearPosterRefs() {
+  selectedKbImage = '';
+  const ref = $('aiPosterRef');
+  if (ref) ref.value = '';
+  const grid = $('kbPosterImgs');
+  if (grid) grid.querySelectorAll('.kb-img.on').forEach(el => el.classList.remove('on'));
+}
+
 $('aiPosterBtn').onclick = async event => {
   const button = event.currentTarget;
   const t0 = Date.now();
@@ -2376,11 +2386,10 @@ $('aiPosterBtn').onclick = async event => {
   const cmd = $('aiPosterCmd').value.trim();
   const extraText = $('aiPosterText').value.trim();
   const style = $('aiPosterStyle').value;
-  const product = $('product').value;
-  const needs = $('needs').value.trim();
-  const instruction = cmd || `为${product}生成营销海报${needs ? `，需求：${needs}` : ''}`;
-  const themeLine = cmd ? '' : `主题：${product}。`;
-  const styleText = style ? `，整体风格：${style}` : '';
+  // 海报只使用海报区自己的输入（指令/补充文字/风格/参考图）。
+  // 不再自动带入主界面的产品/需求字段，避免"没写却生成相关内容"的乱生成。
+  const instruction = cmd;
+  const styleText = style ? `整体风格：${style}。` : '';
   const hasRef = !!file || !!selectedKbImage;
   let psize = posterSizeInfo();
   const instSize = parseInstructionSize(instruction);
@@ -2427,17 +2436,23 @@ $('aiPosterBtn').onclick = async event => {
     : '';
   // 与阿里云控制台体验一致：指令原样交给模型，只保留必要约束，不塞入长篇背景文本；
   // 不写死像素，只给比例，由模型 auto 推荐分辨率（更快，且与控制台一致）
-  const prompt = `请生成一张${psize.label}${ratioText}的酒店营销海报成品图，输出比例严格为${ratioText}。${refInstruction}${themeLine}${styleText}
+  const prompt = `请生成一张${psize.label}${ratioText}的酒店营销海报成品图，输出比例严格为${ratioText}。${refInstruction}${styleText}
 用户指令（请严格执行）：${instruction}${lengthInstruction}${assetTextBlock}
 硬性要求：画面铺满整张图，四周无白边、白框、留白或空隙；图片内中文文字准确、无错别字、无乱码；所有文字完整显示、不得超出边缘或被截断；标题醒目、卖点清晰、信息层级分明、商业海报质感。`;
   const aspectKey = psize.ratio > 1.1 ? '16:9' : (psize.ratio < 0.9 ? '9:16' : 'square');
   const genOpts = { aspect: aspectKey, size: psize.api };
   button.textContent = 'AI生成中…';
-  $('aiPosterStatus').textContent = '';
+  const refNote = file ? '（附上传参考图）' : (selectedKbImage ? '（附知识库配图参考）' : '');
+  $('aiPosterStatus').textContent = `正在按指令生成：${instruction.slice(0, 50)}${instruction.length > 50 ? '…' : ''}${refNote}`;
   try {
     if (!hasByokImage()) {
       $('aiPosterStatus').textContent = imageConfigError();
       progress.stop();
+      return;
+    }
+    if (!instruction) {
+      progress.stop();
+      $('aiPosterStatus').textContent = '请先在海报区填写生成指令（主界面的产品/需求不会自动带入海报）。';
       return;
     }
     let src;
@@ -2513,6 +2528,7 @@ $('aiPosterBtn').onclick = async event => {
   } finally {
     recordImageDuration(Date.now() - t0);
     button.textContent = '🪄 AI 生成成品海报';
+    clearPosterRefs();
   }
 };
 
