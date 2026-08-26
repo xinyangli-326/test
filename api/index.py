@@ -32,7 +32,7 @@ def route(environ):
     if method == "OPTIONS":
         return 204, None
     if method == "GET" and path.endswith("/api/health"):
-        return 200, {"ok": True, "version": "token-plan-sync-fallback-v2"}
+        return 200, {"ok": True, "version": "token-plan-timeout-180-v1"}
     if method == "GET" and path.endswith("/api/knowledge"):
         return 200, app_core.knowledge_live()
     if method == "POST":
