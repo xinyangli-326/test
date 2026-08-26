@@ -989,7 +989,6 @@ const LS = {
   structure: 'tripMall.structure',
   materials: 'tripMall.materials',
   posterStyle: 'tripMall.posterStyle',
-  posterMemory: 'tripMall.posterMemory',
   drafts: 'tripMall.drafts',
   copyHistory: 'tripMall.history.copy',
   posterHistory: 'tripMall.history.poster'
@@ -1007,7 +1006,6 @@ function lsSet(key, value) {
 
 let materials = lsGet(LS.materials, []);
 let drafts = lsGet(LS.drafts, []);
-let posterMemory = lsGet(LS.posterMemory, []);
 let copyHistory = lsGet(LS.copyHistory, []);
 let posterHistory = lsGet(LS.posterHistory, []);
 
@@ -1044,7 +1042,7 @@ function escapeHtml(text) {
 
 /* ============================ 生成进度条 ============================ */
 
-function startProgress(barId) {
+function startProgress(barId, durationMs = 20000) {
   const bar = $(barId);
   const pct = $(barId + 'Pct');
   const fill = $(barId + 'Fill');
@@ -1057,20 +1055,21 @@ function startProgress(barId) {
   let progress = 1;
   let timer = null;
   let finished = false;
+  const interval = 170;
+  const totalTicks = Math.max(10, Math.round((durationMs || 20000) / interval));
+  const stepBase = 98 / totalTicks;
   const tick = () => {
     if (finished) return;
-    // 先快后慢：0-55% 快速推进，55-85% 放缓，85-95% 很慢，95% 后蜗牛爬，完成时直接拉满
-    let step;
-    if (progress < 55) step = 0.9 + Math.random() * 1.5;
-    else if (progress < 85) step = 0.35 + Math.random() * 0.55;
-    else if (progress < 95) step = 0.12 + Math.random() * 0.18;
-    else step = 0.04;
-    progress = Math.min(99.5, progress + step);
+    // 按预估时长推进：整体在 durationMs 内缓慢爬到 99%，完成时拉满
+    let step = stepBase * (0.55 + Math.random() * 0.9);
+    if (progress > 85) step *= 0.4;
+    else if (progress > 70) step *= 0.7;
+    progress = Math.min(99, progress + step);
     pct.textContent = Math.floor(progress) + '%';
     fill.style.width = Math.floor(progress) + '%';
-    timer = setTimeout(tick, 170);
+    timer = setTimeout(tick, interval);
   };
-  timer = setTimeout(tick, 170);
+  timer = setTimeout(tick, interval);
   return {
     done() {
       if (finished) return;
@@ -1522,14 +1521,11 @@ $('learnReset').onclick = () => {
   localStorage.removeItem(LS.profile);
   localStorage.removeItem(LS.structure);
   localStorage.removeItem(LS.posterStyle);
-  localStorage.removeItem(LS.posterMemory);
   localStorage.removeItem(LS.drafts);
-  posterMemory = [];
   $('profileBox').value = '';
   $('structureBox').value = '';
   profileDirty = true;
   renderLearnList();
-  renderPosterMemory();
   renderDraftCount();
   alert('已清空学习素材与画像。');
 };
@@ -2260,244 +2256,6 @@ $('clearDrafts').onclick = () => {
 };
 renderDraftCount();
 
-/* ============================ 海报文案 / 模板 ============================ */
-
-function localPosterCopy() {
-  const product = $('product').value || '酒店服务市场';
-  const category = $('category').value;
-  const goal = $('posterGoal').value;
-  if (category === 'product') return {
-    eyebrow: 'TRIP MALL 主题房升级', headline: product, subheadline: '一站式打造差异化卖点',
-    price: goal === '产品招商' ? '轻量升级 · 快速上线' : '让特色房型更好卖',
-    features: ['方案设计', '物资配置', '营销赋能'],
-    metrics: [{ value: '省心', label: '一站采购' }, { value: '高效', label: '快速落地' }, { value: '专业', label: '服务保障' }],
-    cta: '登录服务市场了解详情'
-  };
-  if (category === 'platform') return {
-    eyebrow: '携程酒店服务市场', headline: product, subheadline: '酒店采购与服务，一站轻松完成',
-    price: '平台好物 · 专业服务',
-    features: ['快速搜索', '在线下单', '售后支持'],
-    metrics: [{ value: '全', label: '品类丰富' }, { value: '快', label: '便捷下单' }, { value: '稳', label: '服务保障' }],
-    cta: '立即进入服务市场'
-  };
-  if (category === 'payment') return {
-    eyebrow: '灵活支付方案', headline: product, subheadline: '减轻现金流压力，采购安排更从容',
-    price: '多种支付方式可选',
-    features: ['对公支付', '账单分期', '免房置换'],
-    metrics: [{ value: '灵活', label: '资金安排' }, { value: '清晰', label: '结算规则' }, { value: '省心', label: '服务支持' }],
-    cta: '咨询适用支付方案'
-  };
-  if (category === 'campaign') return {
-    eyebrow: 'TRIP MALL 限时活动', headline: product, subheadline: '酒店采购好物，限时优惠进行中',
-    price: '限时福利 · 错过再等',
-    features: ['爆品直降', '限时优惠', '酒店专享'],
-    metrics: [{ value: '省', label: '采购成本' }, { value: '选', label: '热门好物' }, { value: '抢', label: '限时福利' }],
-    cta: '立即查看活动会场'
-  };
-  return {
-    eyebrow: '酒店运营实战干货', headline: product, subheadline: '一个问题，一套可落地的方法',
-    price: '收藏备用 · 转发团队',
-    features: ['问题拆解', '操作清单', '避坑建议'],
-    metrics: [{ value: '懂', label: '经营逻辑' }, { value: '会', label: '操作方法' }, { value: '用', label: '落地清单' }],
-    cta: '关注获取更多干货'
-  };
-}
-
-
-function applyPosterCopy(copy, colors = { accent: '#c07c28', ink: '#8c6846', sub: '#5e4a39' }) {
-  snapshot();
-  objects = objects.filter(object => object.type !== 'text');
-  const sx = canvas.width / 1080;
-  const sy = canvas.height / 1920;
-  const s = Math.min(sx, sy);
-  const cx = canvas.width / 2;
-  addTextNoSnapshot(copy.eyebrow, cx, 130 * sy, 34 * s, colors.ink, 'Microsoft YaHei', 700);
-  addTextNoSnapshot(copy.headline, cx, 310 * sy, 118 * s, colors.ink, 'SimHei', 900);
-  addTextNoSnapshot(copy.subheadline, cx, 430 * sy, 40 * s, colors.sub, 'Microsoft YaHei', 700);
-  addTextNoSnapshot(copy.price, cx, 570 * sy, 52 * s, colors.accent, 'Microsoft YaHei', 900);
-  copy.features.forEach((text, index) => addTextNoSnapshot(text, (225 + index * 315) * sx, 1340 * sy, 38 * s, colors.sub, 'Microsoft YaHei', 800));
-  copy.metrics.forEach((item, index) => {
-    addTextNoSnapshot(item.value, (225 + index * 315) * sx, 1545 * sy, 58 * s, colors.accent, 'Microsoft YaHei', 900);
-    addTextNoSnapshot(item.label, (225 + index * 315) * sx, 1610 * sy, 28 * s, colors.sub, 'Microsoft YaHei', 600);
-  });
-  addTextNoSnapshot(copy.cta, cx, 1810 * sy, 38 * s, '#ffffff', 'Microsoft YaHei', 800);
-  selected = null;
-  draw();
-  renderLayers();
-}
-
-function addTextNoSnapshot(text, x, y, size, color, font, weight) {
-  objects.push({ type: 'text', text, x, y, size, color, font, weight, rotation: 0, width: 400, height: size });
-}
-
-$('generatePosterCopy').onclick = async event => {
-  const button = event.currentTarget;
-  button.textContent = 'AI生成中…';
-  $('posterCopyStatus').textContent = '正在生成海报标题、卖点和行动按钮…';
-  const payload = {
-    product: $('product').value,
-    category_name: knowledge.categories[$('category').value].name,
-    goal: $('posterGoal').value,
-    persona: $('persona').value
-  };
-  try {
-    let copy;
-    const prompt = `为Trip MALL携程酒店服务市场生成一套竖版营销海报短文案。产品：${payload.product}；知识库：${payload.category_name}；营销目标：${payload.goal}；目标视角：${payload.persona}。只返回JSON：{"eyebrow":"12字以内","headline":"14字以内","subheadline":"24字以内","price":"16字以内核心利益","features":["8字以内","8字以内","8字以内"],"metrics":[{"value":"短词或数字","label":"8字以内"},{"value":"短词或数字","label":"8字以内"},{"value":"短词或数字","label":"8字以内"}],"cta":"12字以内"}。没有可靠数字时用省心、专业、快速等利益点，不编造数据。`;
-    if (hasByok()) {
-      copy = extractJson(await openAILikeChat('你是Trip MALL海报文案专家，只输出严格JSON。', prompt, { maxTokens: 1000 }));
-    } else {
-      try {
-        if (IS_GITHUB_PAGES) throw new Error('使用公共AI');
-        copy = await apiRequest('/api/poster-copy', payload, 20000);
-      } catch (apiError) {
-        copy = extractJson(await puterChat(prompt));
-      }
-    }
-    applyPosterCopy(copy);
-    $('posterCopyStatus').textContent = 'AI海报文案已生成，每个文字层都可拖动和修改。';
-  } catch (error) {
-    applyPosterCopy(localPosterCopy());
-    $('posterCopyStatus').textContent = `AI暂不可用，已使用本地知识库排版：${error.message}`;
-  } finally {
-    button.textContent = '生成海报文案并自动排版';
-  }
-};
-
-/* ============================ 底图：AI / 上传 / 模板 ============================ */
-
-$('bgMode').querySelectorAll('button').forEach(button => {
-  button.onclick = () => {
-    $('bgMode').querySelectorAll('button').forEach(b => b.classList.remove('on'));
-    button.classList.add('on');
-    $('bgAi').hidden = button.dataset.mode !== 'ai';
-    $('bgUpload').hidden = button.dataset.mode !== 'upload';
-  };
-});
-
-$('aiBg').onclick = async event => {
-  const button = event.currentTarget;
-  const payload = {
-    product: $('product').value,
-    style: $('posterStyle').value,
-    scene: $('bgScene').value,
-    description: $('bgDesc').value,
-    elements: $('bgElements').value
-  };
-  button.textContent = '生成底图中…';
-  $('bgEngineStatus').textContent = '';
-  const sceneText = payload.scene ? `场景：${payload.scene}。` : '';
-  const desc = payload.description
-    ? `画面主体必须精确为：${payload.description}。`
-    : '';
-  const paletteText = /香槟|金色|轻奢|咖啡|深咖/.test(String(payload.style || ''))
-    ? 'Premium champagne gold / warm ivory / dark coffee palette.'
-    : 'Color palette naturally matched to the theme and scene, rich and varied, avoid a single monotonous brand tone.';
-  const styleLine = payload.style ? `，整体风格：${payload.style}` : '';
-  const qualityPrompt = `请为「${payload.product}」生成一张 9:16 竖版酒店营销海报底图${styleLine}。
-${sceneText}${desc}
-${payload.elements ? `可搭配的视觉元素：${payload.elements}。` : ''}
-画面要求：主体与主题紧密相关、构图大气有层次，上方和中部预留干净空白用于排版标题与文案；配色根据主题自然搭配、丰富有质感${paletteText.includes('champagne') ? '（香槟金、暖白、深咖）' : ''}；光线自然、有明暗对比、商业广告质感。
-底图内不要出现任何文字、水印、Logo、人脸或畸形形象。`;
-  try {
-    let image;
-    if (hasByokImage()) {
-      const src = await openAILikeImage(qualityPrompt, { aspect: '9:16' });
-      image = new Image();
-      image.src = src;
-      await image.decode();
-      $('bgEngineStatus').textContent = `引擎：自填AI图片（${getImageConfig().model}）`;
-    } else {
-      if (IS_GITHUB_PAGES) await ensurePuterAuth();
-      try {
-        if (IS_GITHUB_PAGES) throw new Error('使用公共AI');
-        const data = await apiRequest('/api/poster', payload, 30000);
-        image = new Image();
-        image.src = data.image;
-        await image.decode();
-        $('bgEngineStatus').textContent = '引擎：OpenAI gpt-image-2（Vercel API）';
-      } catch (apiError) {
-        if (!window.puter?.ai?.txt2img) throw new Error('Puter图片服务未加载');
-        const puterModel = await pickPuterImageModel();
-        image = await window.puter.ai.txt2img(qualityPrompt, { model: puterModel, ratio: '9:16' });
-        $('bgEngineStatus').textContent = `引擎：Puter 公共AI（${puterModel}）— 后端API不可用时自动降级`;
-      }
-    }
-    snapshot();
-    backgroundImage = image;
-    backgroundInfo = { mode: 'ai', style: payload.style, scene: payload.scene, description: payload.description };
-    draw();
-  } catch (error) {
-    alert(`底图生成失败：${error.message}`);
-    $('bgEngineStatus').textContent = '';
-  } finally {
-    button.textContent = 'AI生成底图';
-  }
-};
-
-let bgFileImage = null;
-$('bgFile').onchange = event => {
-  loadImageFile(event.target.files[0], image => {
-    bgFileImage = image;
-    $('bgPreview').innerHTML = `<img src="${image.src}" alt="底图预览">`;
-  });
-};
-$('useBg').onclick = () => {
-  if (!bgFileImage) return alert('先选择要上传的底图');
-  snapshot();
-  backgroundImage = bgFileImage;
-  backgroundInfo = { mode: 'upload' };
-  draw();
-};
-$('removeBg').onclick = () => {
-  if (!backgroundImage) return;
-  snapshot();
-  backgroundImage = null;
-  backgroundInfo = null;
-  draw();
-};
-
-/* 海报记忆学习：投喂的参考海报长期保存，越投喂生成越接近 */
-
-function renderPosterMemory() {
-  $('posterMemoryCount').textContent = posterMemory.length;
-  $('posterMemoryList').innerHTML = posterMemory.length ? posterMemory.map(item => `
-    <div class="memory-item" title="${escapeHtml(item.name)}">
-      <img src="${item.thumb}" alt="参考海报">
-      <span class="nm">${escapeHtml(item.style?.style_name || item.name)}</span>
-      <button class="del" data-del="${item.id}" title="删除这张记忆">×</button>
-    </div>`).join('') : '<p class="empty">还没有投喂海报，上传参考海报后自动加入记忆库，投喂越多效果越好。</p>';
-  $('posterMemoryList').querySelectorAll('.del').forEach(button => {
-    button.onclick = () => {
-      posterMemory = posterMemory.filter(item => item.id !== +button.dataset.del);
-      lsSet(LS.posterMemory, posterMemory);
-      renderPosterMemory();
-    };
-  });
-}
-
-function aggregatePosterStyle() {
-  const styles = posterMemory.map(item => item.style).filter(Boolean);
-  if (!styles.length) return null;
-  const colors = [...new Set(styles.flatMap(s => s.colors || []))].filter(Boolean);
-  const elements = [...new Set(styles.flatMap(s => s.key_elements || []))].slice(0, 6);
-  const bgPrompts = styles.map(s => s.bg_prompt).filter(Boolean).join('; ').slice(0, 1500);
-  return {
-    style_name: `综合 ${styles.length} 张参考海报风格`,
-    colors: colors.slice(0, 3),
-    layout: styles.map(s => s.layout).filter(Boolean).join('；').slice(0, 300),
-    key_elements: elements,
-    bg_prompt: bgPrompts
-  };
-}
-
-$('clearPosterMemory').onclick = () => {
-  if (!confirm('确认清空海报学习记忆库？')) return;
-  posterMemory = [];
-  lsSet(LS.posterMemory, posterMemory);
-  renderPosterMemory();
-};
-renderPosterMemory();
-
 /* 海报功能导航：点击导航块切换对应功能页 */
 const posterNav = $('posterNav');
 if (posterNav) {
@@ -2513,9 +2271,30 @@ if (posterNav) {
 }
 
 /* AI 成品海报：指令 + 参考图 → 一键生成成品海报 */
+
+function parseInstructionSize(text) {
+  const t = String(text || '');
+  let m = t.match(/(\d{3,4})\s*[xX×*]\s*(\d{3,4})/);
+  if (m) {
+    const w = Math.min(4096, Math.max(200, +m[1]));
+    const h = Math.min(4096, Math.max(200, +m[2]));
+    return { w, h, ratio: w / h, label: w > h ? '横版' : (w < h ? '竖版' : '方形') };
+  }
+  m = t.match(/(\d+)\s*:\s*(\d+)/);
+  if (m) {
+    const a = +m[1];
+    const b = +m[2];
+    if (a > 0 && b > 0) return { ratio: a / b, label: a > b ? '横版' : (a < b ? '竖版' : '方形') };
+  }
+  if (/竖版|9:16|垂直|纵向/.test(t)) return { ratio: 9 / 16, label: '竖版' };
+  if (/横版|16:9|水平|横向/.test(t)) return { ratio: 16 / 9, label: '横版' };
+  if (/方形|正方|1:1/.test(t)) return { ratio: 1, label: '方形' };
+  return null;
+}
+
 $('aiPosterBtn').onclick = async event => {
   const button = event.currentTarget;
-  const progress = startProgress('aiPosterProgress');
+  const progress = startProgress('aiPosterProgress', 90000);
   const file = $('aiPosterRef').files[0];
   const cmd = $('aiPosterCmd').value.trim();
   const extraText = $('aiPosterText').value.trim();
@@ -2523,12 +2302,31 @@ $('aiPosterBtn').onclick = async event => {
   const product = $('product').value;
   const needs = $('needs').value.trim();
   const instruction = cmd || `为${product}生成营销海报${needs ? `，需求：${needs}` : ''}`;
+  const themeLine = cmd ? '' : `主题：${product}。`;
   const styleText = style ? `，整体风格：${style}` : '';
   const ctaHint = /CTA|按钮|引导|立即|了解详情/i.test(instruction) ? '' : '；如指令未指定行动按钮，可在底部放一句引导，如「登录服务市场了解详情」';
   const paletteText = /香槟|金色|轻奢|咖啡|深咖/.test(style)
     ? '除非用户指定，默认使用香槟金、暖白、深咖配色。'
     : '配色由主题与文案自然决定，丰富有层次、有明暗对比，避免全篇单一色调或一成不变的品牌色。';
-  const psize = posterSizeInfo();
+  let psize = posterSizeInfo();
+  const instSize = parseInstructionSize(instruction);
+  if (instSize) {
+    if (instSize.w && instSize.h) {
+      setPosterSize(instSize.w, instSize.h);
+    } else if (instSize.ratio) {
+      let w;
+      let h;
+      if (instSize.ratio >= 1) {
+        w = 1280;
+        h = Math.round(1280 / instSize.ratio);
+      } else {
+        h = 1280;
+        w = Math.round(1280 * instSize.ratio);
+      }
+      setPosterSize(w, h);
+    }
+    psize = posterSizeInfo();
+  }
   const gcd = (a, b) => (b ? gcd(b, a % b) : a);
   const ratioText = `${psize.w / gcd(psize.w, psize.h)}:${psize.h / gcd(psize.w, psize.h)}`;
   const assetTextBlock = extraText
@@ -2537,7 +2335,7 @@ $('aiPosterBtn').onclick = async event => {
   const larkBg = larkRelevant(`${instruction} ${product} ${needs}`, 900, 1);
   const larkPromptBlock = larkBg ? `\n\n【飞书内容库背景（仅作内容与卖点参考，禁止把这些文字直接复制进海报画面）】\n${larkBg}` : '';
   const prompt = `请生成一张${psize.label}${ratioText}（画布 ${psize.w}×${psize.h}）的完整酒店营销海报成品图，图片内直接包含准确的中文文字（无错别字、无乱码）。
-主题：${product}。${styleText}
+${themeLine}${styleText}
 用户指令（请严格执行）：${instruction}
 排版要求：标题醒目、卖点分条短句、信息层级清晰、高级商业广告质感${ctaHint}。${paletteText}${assetTextBlock}${larkPromptBlock}`;
   const aspectKey = psize.ratio > 1.1 ? '16:9' : (psize.ratio < 0.9 ? '9:16' : 'square');
@@ -2618,7 +2416,7 @@ $('aiPosterBtn').onclick = async event => {
 /* 编辑 AI 海报：把当前画布海报作为参考图，按指令修改 */
 $('aiEditBtn').onclick = async event => {
   const button = event.currentTarget;
-  const progress = startProgress('aiEditProgress');
+  const progress = startProgress('aiEditProgress', 60000);
   const cmd = $('aiEditCmd').value.trim();
   if (!cmd) {
     progress.stop();
@@ -2681,77 +2479,6 @@ $('aiEditBtn').onclick = async event => {
   }
 };
 
-/* ============================ 贴纸生成（多风格） ============================ */
-
-async function pickPuterImageModel() {
-  try {
-    const models = await window.puter.ai.listModels?.();
-    if (Array.isArray(models) && models.length) {
-      const imageModels = models.filter(m => /gpt-image|dall-e|flux|sd3|image/i.test(String(m)));
-      if (imageModels.length) return String(imageModels[0]);
-    }
-  } catch {}
-  return 'gpt-image-1';
-}
-
-const STICKER_STYLE_DESC = {
-  '卡通萌趣': 'cute cartoon style, big expressive eyes, bold clean outline, playful',
-  '写实风': 'photorealistic style, natural lighting, soft shadows, detailed texture',
-  '简洁风': 'minimal flat design, simple shapes, generous negative space, clean',
-  '3D立体': 'soft 3D render style, glossy, rounded, subtle depth and lighting',
-  '国潮插画': 'Chinese trend illustration style, ink wash accents, elegant patterns',
-  '手绘涂鸦': 'hand-drawn doodle style, sketchy lines, casual, warm',
-  '扁平极简': 'flat vector style, solid colors, geometric, modern'
-};
-
-$('addSticker').onclick = async event => {
-  const button = event.currentTarget;
-  const subject = $('stickerPrompt').value;
-  const style = $('stickerStyle').value;
-  const protectedNames = ['小黄人', '蛋仔派对', '迪士尼', '玲娜贝儿', '奥特曼', '宝可梦', '皮卡丘', '米老鼠', '星黛露', '库洛米'];
-  if (protectedNames.some(name => subject.includes(name))) {
-    return alert('商业IP请上传已授权透明PNG；AI只生成原创或通用角色。');
-  }
-  button.textContent = '生成贴纸中…';
-  try {
-    let image;
-    const styleDesc = STICKER_STYLE_DESC[style] || STICKER_STYLE_DESC['卡通萌趣'];
-    const stickerPrompt = `原创贴纸，${style}：${subject}。${styleDesc}。单一主体居中，完整角色，粗线条轮廓，商业贴纸质感，画面干净，无文字，无Logo，不模仿任何版权角色。`;
-    if (hasByokImage()) {
-      const src = await openAILikeImage(stickerPrompt, { aspect: 'square' });
-      image = new Image();
-      image.src = src;
-      await image.decode();
-    } else {
-      if (IS_GITHUB_PAGES) await ensurePuterAuth();
-      try {
-        if (IS_GITHUB_PAGES) throw new Error('使用公共AI');
-        const data = await apiRequest('/api/sticker', { subject, style }, 30000);
-        image = new Image();
-        image.src = data.image;
-        await image.decode();
-      } catch (apiError) {
-        if (!window.puter?.ai?.txt2img) throw new Error('Puter图片服务未加载');
-        image = await window.puter.ai.txt2img(
-          stickerPrompt,
-          { model: await pickPuterImageModel(), ratio: '1:1', transparent_background: true }
-        );
-      }
-    }
-    addObject({
-      type: 'image', image,
-      x: 760, y: 850,
-      width: image.naturalWidth || image.width,
-      height: image.naturalHeight || image.height,
-      scale: 0.35, rotation: 0
-    });
-  } catch (error) {
-    alert(`贴纸生成失败：${error.message}`);
-  } finally {
-    button.textContent = 'AI生成贴纸';
-  }
-};
-
 /* ============================ 海报AI学习 ============================ */
 
 function resizeImageFile(file, maxSide) {
@@ -2769,180 +2496,6 @@ function resizeImageFile(file, maxSide) {
     });
   });
 }
-
-async function puterVision(file) {
-  if (!window.puter?.ai?.chat) throw new Error('公共AI不可用');
-  const prompt = `分析这张酒店营销海报，只返回JSON：{"style_name":"一句话概括风格","colors":["#RRGGBB","#RRGGBB","#RRGGBB"],"layout":"构图方式描述","font_feel":"字体气质","tone":"文案语气","key_elements":["元素1","元素2"],"bg_prompt":"用于AI生成类似风格底图的英文描述，要求9:16竖版、无文字、无Logo、无版权角色","layout_guide":"排版建议"}。colors 必须从这张海报的实际主色中提取（取2-4个真实出现的主色），不要臆造或套用固定色。不要复制海报上的具体文字内容。`;
-  const response = await window.puter.ai.chat(prompt, { images: [file] });
-  return extractJson(puterText(response));
-}
-
-function localStyleFromImage(image) {
-  const temp = document.createElement('canvas');
-  temp.width = 40;
-  temp.height = 40;
-  const g = temp.getContext('2d');
-  g.drawImage(image, 0, 0, 40, 40);
-  const data = g.getImageData(0, 0, 40, 40).data;
-  const buckets = {};
-  for (let i = 0; i < data.length; i += 16) {
-    const key = `${data[i] >> 5},${data[i + 1] >> 5},${data[i + 2] >> 5}`;
-    buckets[key] = (buckets[key] || 0) + 1;
-  }
-  const top = Object.entries(buckets).sort((a, b) => b[1] - a[1]).slice(0, 3)
-    .map(([key]) => {
-      const [r, g, b] = key.split(',').map(Number);
-      const hex = [r, g, b].map(v => ((v << 5) | 15).toString(16).padStart(2, '0')).join('');
-      return '#' + hex;
-    });
-  return {
-    style_name: '自定义参考风格',
-    colors: top,
-    layout: '参考上传海报的构图',
-    font_feel: '参考上传海报的字体气质',
-    tone: '参考上传海报的文案语气',
-    key_elements: [],
-    bg_prompt: `vertical 9:16 hotel marketing poster background, dominant colors ${top.join(', ')}, premium hotel commercial feel, no text, no logo, clean copy zones`,
-    layout_guide: ''
-  };
-}
-
-$('learnPoster').onclick = async event => {
-  const button = event.currentTarget;
-  const file = $('refPoster').files[0];
-  if (!file) return alert('先上传一张想学习的参考海报');
-  const mode = $('learnMode').value;
-  button.textContent = 'AI学习中…';
-  $('posterLearnStatus').textContent = '正在分析参考海报的风格…';
-  try {
-    const { dataUrl, mime } = await resizeImageFile(file, 1024);
-    const thumb = await resizeImageFile(file, 180);
-    const ref = await resizeImageFile(file, 512);
-    let style;
-    try {
-      if (IS_GITHUB_PAGES) throw new Error('use puter');
-      style = await apiRequest('/api/poster-learn', {
-        mime,
-        data_b64: dataUrl.split(',')[1]
-      }, 30000);
-    } catch (apiError) {
-      try {
-        if (IS_GITHUB_PAGES) await ensurePuterAuth();
-        style = await puterVision(file);
-      } catch (visionError) {
-        const image = new Image();
-        image.src = dataUrl;
-        await image.decode();
-        style = localStyleFromImage(image);
-      }
-    }
-    posterMemory.unshift({
-      id: Date.now(),
-      name: file.name,
-      date: Date.now(),
-      thumb: thumb.dataUrl,
-      ref: ref.dataUrl,
-      style
-    });
-    if (posterMemory.length > 12) posterMemory = posterMemory.slice(0, 12);
-    lsSet(LS.posterMemory, posterMemory);
-    renderPosterMemory();
-    lsSet(LS.posterStyle, style);
-
-    const learnedCount = posterMemory.length;
-    const memoryStyle = aggregatePosterStyle() || style;
-    let bgImage;
-
-    if (mode === 'direct') {
-      bgImage = new Image();
-      bgImage.src = dataUrl;
-      await bgImage.decode();
-      snapshot();
-      backgroundImage = bgImage;
-      backgroundInfo = { mode: 'learn', style: '直接使用参考图' };
-      objects = objects.filter(object => object.type !== 'text');
-      selected = null;
-      draw();
-      renderLayers();
-      $('posterLearnStatus').textContent = `已把参考图「${file.name}」设为底图（记忆第 ${learnedCount} 张）。可直接添加文案，或继续投喂。`;
-    } else {
-      $('posterLearnStatus').textContent = `正在用参考图生成相似海报（已综合 ${learnedCount} 张记忆）…`;
-      const extras = posterMemory.slice(1, 4).map(item => item.ref).filter(Boolean);
-      const images = [
-        { data_b64: dataUrl.split(',')[1], mime },
-        ...extras.map(src => ({
-          data_b64: src.split(',')[1],
-          mime: src.split(';')[0].split(':')[1]
-        }))
-      ];
-      let data;
-      try {
-        if (IS_GITHUB_PAGES) throw new Error('use vercel');
-        data = await apiRequest('/api/poster-edit', {
-          images,
-          product: $('product').value,
-          scene: $('bgScene').value,
-          description: $('bgDesc').value
-        }, 60000);
-      } catch (editError) {
-        let learnedPrompt = `综合 ${learnedCount} 张参考海报的风格，为"${$('product').value}"生成9:16酒店营销海报底图。`;
-        learnedPrompt += `参考风格：${memoryStyle?.style_name || ''}；主色：${(memoryStyle?.colors || []).join('、')}；构图：${memoryStyle?.layout || ''}；视觉元素：${(memoryStyle?.key_elements || []).join('、')}。`;
-        learnedPrompt += `要求：保留参考海报的整体气质但内容全新，主体清晰、居中偏下，上方留出干净空白放标题，真实商业摄影质感，无文字、无Logo、无人脸、无抽象漂浮物。`;
-        if (hasByokImage()) {
-          try {
-            const imgCfg = getImageConfig();
-            const src = (imgCfg.provider === 'dashscope' || imgCfg.provider === 'qianwen')
-              ? await openAILikeImage(learnedPrompt, { aspect: '9:16', reference: dataUrl })
-              : await openAILikeImage(learnedPrompt, { aspect: '9:16' });
-            bgImage = new Image();
-            bgImage.src = src;
-            await bgImage.decode();
-            snapshot();
-            backgroundImage = bgImage;
-            backgroundInfo = { mode: 'learn', style: '自填AI图生图' };
-            const colors = {
-              accent: style?.colors?.[0] || '#c07c28',
-              ink: style?.colors?.[1] || '#8c6846',
-              sub: style?.colors?.[2] || '#5e4a39'
-            };
-            applyPosterCopy(localPosterCopy(), colors);
-            $('posterLearnStatus').textContent = `完成！已参考 ${learnedCount} 张海报生成相似底图并排版（引擎：${imgCfg.model}${(imgCfg.provider === 'dashscope' || imgCfg.provider === 'qianwen') ? '·参考图编辑' : ''}）。投喂越多越接近你的风格。`;
-            return;
-          } catch (byokError) {}
-        }
-        bgImage = new Image();
-        bgImage.src = dataUrl;
-        await bgImage.decode();
-        snapshot();
-        backgroundImage = bgImage;
-        backgroundInfo = { mode: 'learn', style: '直接使用参考图' };
-        objects = objects.filter(object => object.type !== 'text');
-        selected = null;
-        draw();
-        renderLayers();
-        $('posterLearnStatus').textContent = `AI 模仿生成暂不可用（${editError.message}），已用参考图直接作为底图。配置 Google AI Key 或在 AI 设置填图片模型后可启用真正的图生图。`;
-        return;
-      }
-      bgImage = new Image();
-      bgImage.src = data.image;
-      await bgImage.decode();
-      snapshot();
-      backgroundImage = bgImage;
-      backgroundInfo = { mode: 'learn', style: style?.style_name || 'AI模仿生成' };
-      const colors = {
-        accent: style?.colors?.[0] || '#c07c28',
-        ink: style?.colors?.[1] || '#8c6846',
-        sub: style?.colors?.[2] || '#5e4a39'
-      };
-      applyPosterCopy(localPosterCopy(), colors);
-      $('posterLearnStatus').textContent = `完成！已参考 ${learnedCount} 张海报生成相似底图并排版（引擎：Gemini Nano Banana 同款模型）。投喂越多越接近你的风格。`;
-    }
-  } catch (error) {
-    $('posterLearnStatus').textContent = `海报学习失败：${error.message}`;
-  } finally {
-    button.textContent = 'AI学习并生成类似海报';
-  }
-};
 
 /* ============================ 海报尺寸 / 下载 ============================ */
 
