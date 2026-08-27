@@ -2436,7 +2436,7 @@ $('aiPosterBtn').onclick = async event => {
   // 不写死像素，只给比例，由模型 auto 推荐分辨率（更快，且与控制台一致）
   const prompt = `请生成一张${psize.label}${ratioText}的酒店营销海报成品图，输出比例严格为${ratioText}。${refInstruction}
 用户指令（请严格执行）：${instruction}${lengthInstruction}${assetTextBlock}
-硬性要求：画面铺满整张图，四周无白边、白框、留白或空隙；图片内中文文字准确、无错别字、无乱码；所有文字完整显示、不得超出边缘或被截断；标题醒目、卖点清晰、信息层级分明、商业海报质感。`;
+硬性要求：画面铺满整张图，四周无白边、白框、留白或空隙；图片内中文文字准确、无错别字、无乱码；所有文字完整显示、不得超出边缘或被截断；标题醒目、卖点清晰、信息层级分明、商业海报质感。只呈现指令明确要求的内容：指令未提到的配色（尤其是橘金/香槟/金色系）、卡通动物贴纸、动物插画或装饰元素一律不得出现；若指令未指定配色，使用干净自然、贴合主题的配色，不预设任何固定色调。`;
   const aspectKey = psize.ratio > 1.1 ? '16:9' : (psize.ratio < 0.9 ? '9:16' : 'square');
   const genOpts = { aspect: aspectKey, size: psize.api };
   button.textContent = 'AI生成中…';
