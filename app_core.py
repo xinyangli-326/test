@@ -117,6 +117,28 @@ def token_plan_chat(p):
     return {"content": content}
 
 
+def _image_content(p, prompt):
+    """从请求里取 1-3 张参考图（references 数组，兼容旧 reference）构造多模态消息内容"""
+    content = []
+    refs = p.get("references")
+    if isinstance(refs, str):
+        refs = [refs]
+    if not isinstance(refs, list):
+        refs = []
+    seen = []
+    for r in refs[:3]:
+        r = str(r or "")
+        if r.startswith("data:image") and r not in seen:
+            content.append({"image": r})
+            seen.append(r)
+    single = str(p.get("reference") or "")
+    if single.startswith("data:image") and single not in seen:
+        content.append({"image": single})
+        seen.append(single)
+    content.append({"text": prompt})
+    return content
+
+
 def token_plan_image(p):
     """Token Plan 图片中转：走官方多模态接口，图片下载后转 base64 返回"""
     api_key = str(p.get("apiKey") or "").strip()
@@ -126,11 +148,7 @@ def token_plan_image(p):
     prompt = str(p.get("prompt") or "").strip()
     if not prompt:
         raise ValueError("缺少图片描述")
-    content = []
-    reference = str(p.get("reference") or "")
-    if reference.startswith("data:image"):
-        content.append({"image": reference})
-    content.append({"text": prompt})
+    content = _image_content(p, prompt)
     parameters = {"watermark": False}
     if "prompt_extend" in p:
         # 显式透传 true/false：前端关闭 prompt 改写（防止文字乱码）时，后端不能把 false 吞掉
@@ -192,11 +210,7 @@ def token_plan_image_async(p):
     prompt = str(p.get("prompt") or "").strip()
     if not prompt:
         raise ValueError("缺少图片描述")
-    content = []
-    reference = str(p.get("reference") or "")
-    if reference.startswith("data:image"):
-        content.append({"image": reference})
-    content.append({"text": prompt})
+    content = _image_content(p, prompt)
     parameters = {"watermark": False}
     if "prompt_extend" in p:
         parameters["prompt_extend"] = bool(p.get("prompt_extend"))

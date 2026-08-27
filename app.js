@@ -237,11 +237,12 @@ async function openAILikeChat(system, user, { maxTokens = 3000, temperature = 0.
   return content;
 }
 
-async function dashscopeImage(prompt, { aspect = 'square', reference = null, size = '', strictRef = false, onStatus = null } = {}) {
+async function dashscopeImage(prompt, { aspect = 'square', reference = null, references = null, size = '', strictRef = false, onStatus = null } = {}) {
   const img = getImageConfig();
   const isTokenPlan = img.provider === 'qianwen';
   const providerLabel = isTokenPlan ? 'Token Plan' : '百炼';
-  const isEdit = !!reference;
+  const refs = (Array.isArray(references) ? references.filter(Boolean) : (reference ? [reference] : [])).slice(0, 3);
+  const isEdit = refs.length > 0;
   const isV3 = /3\.0/i.test(img.model || '');
   let model;
   if (isV3) {
@@ -252,7 +253,7 @@ async function dashscopeImage(prompt, { aspect = 'square', reference = null, siz
     model = img.model || 'qwen-image';
   }
   const content = [];
-  if (isEdit) content.push({ image: reference });
+  for (const r of refs) content.push({ image: r });
   content.push({ text: prompt });
   const parameters = { watermark: false };
   if (isV3) {
@@ -284,7 +285,8 @@ async function dashscopeImage(prompt, { aspect = 'square', reference = null, siz
       apiKey: img.key,
       model,
       prompt,
-      reference: isEdit ? reference : '',
+      references: refs,
+      reference: refs[0] || '',
       size: parameters.size || '',
       prompt_extend: parameters.prompt_extend === undefined ? undefined : !!parameters.prompt_extend,
       negative_prompt: parameters.negative_prompt || '',
@@ -507,11 +509,11 @@ async function toSafeDataURL(src) {
   }
 }
 
-async function openAILikeImage(prompt, { aspect = 'square', reference = null, size = '', strictRef = false, onStatus = null } = {}) {
+async function openAILikeImage(prompt, { aspect = 'square', reference = null, references = null, size = '', strictRef = false, onStatus = null } = {}) {
   const img = getImageConfig();
   if (!img) throw new Error(imageConfigError());
-  if (img.provider === 'dashscope' || img.provider === 'qianwen') return dashscopeImage(prompt, { aspect, reference, size, strictRef, onStatus });
-  if (reference) throw new Error('参考图编辑仅支持阿里云百炼 / 千问AI平台 Token Plan（qwen-image-3.0 / qwen-image-3.0-pro / qwen-image-2.0-pro），请在图片服务商里选择百炼或 Token Plan');
+  if (img.provider === 'dashscope' || img.provider === 'qianwen') return dashscopeImage(prompt, { aspect, reference, references, size, strictRef, onStatus });
+  if ((Array.isArray(references) && references.length) || reference) throw new Error('参考图编辑仅支持阿里云百炼 / 千问AI平台 Token Plan（qwen-image-3.0 / qwen-image-3.0-pro / qwen-image-2.0-pro），请在图片服务商里选择百炼或 Token Plan');
   const base = img.base.replace(/\/+$/, '');
   const model = img.model;
   const isSilicon = img.provider === 'siliconflow';
@@ -2492,10 +2494,10 @@ function clearPosterRefs() {
 const aiPosterRefInput = $('aiPosterRef');
 if (aiPosterRefInput) {
   aiPosterRefInput.addEventListener('change', () => {
-    const file = aiPosterRefInput.files[0];
+    const files = Array.from(aiPosterRefInput.files || []).slice(0, 3);
     const status = $('aiPosterStatus');
-    if (status) status.textContent = file
-      ? `已选择参考图：${file.name}（将严格按此图的版式/配色/风格生成）`
+    if (status) status.textContent = files.length
+      ? `已选择 ${files.length} 张参考图：${files.map((f, i) => `图${['一','二','三'][i] || i + 1}=${f.name}`).join('，')}（指令里可用「图一/图二/图三」分别引用）`
       : '';
   });
 }
@@ -2504,13 +2506,13 @@ $('aiPosterBtn').onclick = async event => {
   const button = event.currentTarget;
   const t0 = Date.now();
   const progress = startProgress('aiPosterProgress', estimateImageDuration());
-  const file = $('aiPosterRef').files[0];
+  const files = Array.from($('aiPosterRef').files || []).slice(0, 3);
   const cmd = $('aiPosterCmd').value.trim();
   const extraText = $('aiPosterText').value.trim();
   // 海报只使用海报区自己的输入（指令/补充文字/参考图），无风格下拉、无任何自动注入。
   // 不再自动带入主界面的产品/需求字段，避免"没写却生成相关内容"的乱生成。
   const instruction = cmd;
-  const hasRef = !!file || !!selectedKbImage;
+  const hasRef = files.length > 0 || !!selectedKbImage;
   let psize = posterSizeInfo();
   const instSize = parseInstructionSize(instruction);
   if (instSize) {
@@ -2526,7 +2528,7 @@ $('aiPosterBtn').onclick = async event => {
     psize = posterSizeInfo();
   } else if (hasRef && !instSize) {
     // 有参考图且指令未指定尺寸：先按参考图本身比例定画布（参考图优先），再按文字量自动拉长
-    const refSize = await referenceNaturalSize(file || selectedKbImage);
+    const refSize = await referenceNaturalSize(files[0] || selectedKbImage);
     if (refSize && refSize.w > 0 && refSize.h > 0) {
       const r = refSize.w / refSize.h;
       if (r >= 1) {
@@ -2550,16 +2552,20 @@ $('aiPosterBtn').onclick = async event => {
     : '';
   let prompt;
   if (hasRef) {
-    // 参考图优先模式：参考图是唯一设计基准，用户指令只描述替换/补充内容。
+    // 参考图优先模式（支持多张）：参考图是唯一设计基准，用户指令可分别引用图一/图二/图三。
     // 不再附带任何可能与参考图冲突的约束（不预设配色、不禁止装饰元素等），
     // 避免模型收到矛盾指令后自由发挥出与参考图无关的海报。
     const lengthLine = extraText.length > 60
       ? '若文字较多，海报整体可沿参考图风格纵向自然延伸拉长，确保所有文字完整放下，延伸后仍是同一套版式与视觉语言。'
       : '';
-    prompt = `请以这张参考图为基础，编辑生成一张成品海报。参考图是唯一的设计基准，必须完整保留、不得重新设计：
+    const refCount = files.length + (selectedKbImage ? 1 : 0);
+    const refHint = (files.length + (selectedKbImage ? 1 : 0)) > 1
+      ? '参考图按顺序为图一、图二、图三；用户要求中的「图一/图二/图三」即依次指代这些图，请严格按编号取用对应图片的要素。'
+      : '提供的参考图为图一。';
+    prompt = `请以提供的 ${refCount} 张参考图为基础，编辑生成一张成品海报。参考图是唯一的设计基准，必须完整保留、不得重新设计。${refHint}
 1. 完整保留参考图的构图、版式、配色、字体、标题位置、元素、装饰与整体氛围，逐一对齐，不要另起炉灶、不要自由发挥、不要擅自更换色调或改变版式；
-2. 只按下面的用户要求替换/补充画面内容与文字，未提到的部分保持参考图原样；
-3. 画面比例默认与参考图一致；用户明确要求的方向或比例优先。${lengthLine}
+2. 用户明确指定某张图（如"按图一的排版""底图参考图二""logo 用图三"）时，以该张图对应的要素为准；未明确指定的图仅作风格/要素参考；只按下面的用户要求替换/补充内容与文字，未提到的部分保持参考图原样；
+3. 画面比例默认与图一（或用户指定的基准图）一致；用户明确要求的方向或比例优先。${lengthLine}
 用户要求：${instruction || '按参考图原样输出，只做清晰化处理'}${assetTextBlock}
 质量要求：中文文字准确、无错别字、无乱码；所有文字完整显示、不超出边缘、不被截断；画面铺满整张图，四周无白边、白框或留白；整体保持参考图的商业海报质感。`;
   } else {
@@ -2578,7 +2584,7 @@ $('aiPosterBtn').onclick = async event => {
     }
   };
   button.textContent = 'AI生成中…';
-  const refNote = file ? '（附上传参考图）' : (selectedKbImage ? '（附知识库配图参考）' : '');
+  const refNote = (files.length || selectedKbImage) ? `（附${files.length + (selectedKbImage ? 1 : 0)}张参考图）` : '';
   $('aiPosterStatus').textContent = `正在按指令生成：${instruction.slice(0, 50)}${instruction.length > 50 ? '…' : ''}${refNote}`;
   let generatedOk = false;
   try {
@@ -2597,33 +2603,27 @@ $('aiPosterBtn').onclick = async event => {
     // 参考图优先：一旦带了参考图，就绝不降级成纯文字生成，
     // 否则模型会自由发挥出与参考图无关的海报。
     const refRefuse = '已停止生成，未降级为纯文字模式（避免产出与参考图无关的海报）；请检查图片服务商是否支持参考图编辑，或重新上传参考图后重试';
-    if (selectedKbImage) {
-      let kbDataUrl = '';
-      try {
+    // 支持 1-3 张参考图：依次为图一/图二/图三，指令里可用「图一/图二/图三」分别引用
+    const refLabels = ['图一', '图二', '图三'];
+    let refs = [];
+    try {
+      for (let i = 0; i < files.length; i++) {
+        const resized = await resizeImageFile(files[i], 1280, { forceJpeg: true, quality: 0.85 });
+        refs.push({ label: refLabels[i] || '图' + (i + 1), dataUrl: resized.dataUrl });
+      }
+      if (selectedKbImage && refs.length < 3) {
         const kbResp = await fetch(selectedKbImage);
         const kbBlob = await kbResp.blob();
         const kbFile = new File([kbBlob], 'kb.png', { type: kbBlob.type || 'image/png' });
-        // 参考图压缩到 1280 并统一转 JPG：显著减小请求体积，降低中转超时概率
         const resized = await resizeImageFile(kbFile, 1280, { forceJpeg: true, quality: 0.85 });
-        kbDataUrl = resized.dataUrl;
-      } catch (kbError) {
-        throw new Error(`知识库配图读取失败：${kbError.message}，请重新选择参考图后再试。`);
+        refs.push({ label: refLabels[refs.length] || '图' + (refs.length + 1), dataUrl: resized.dataUrl });
       }
+    } catch (buildError) {
+      throw new Error(`参考图读取失败：${buildError.message}，请重新选择参考图后再试。`);
+    }
+    if (refs.length) {
       try {
-        src = await openAILikeImage(prompt, { ...genOpts, reference: kbDataUrl, strictRef: true });
-      } catch (refError) {
-        throw new Error(`参考图生成失败：${refError.message}（${refRefuse}）`);
-      }
-    } else if (file) {
-      let dataUrl = '';
-      try {
-        const resized = await resizeImageFile(file, 1280, { forceJpeg: true, quality: 0.85 });
-        dataUrl = resized.dataUrl;
-      } catch (fileError) {
-        throw new Error(`参考图读取失败：${fileError.message}，请重新上传参考图后再试。`);
-      }
-      try {
-        src = await openAILikeImage(prompt, { ...genOpts, reference: dataUrl, strictRef: true });
+        src = await openAILikeImage(prompt, { ...genOpts, references: refs.map(r => r.dataUrl), strictRef: true });
       } catch (refError) {
         throw new Error(`参考图生成失败：${refError.message}（${refRefuse}）`);
       }
