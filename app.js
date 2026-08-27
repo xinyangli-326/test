@@ -272,10 +272,19 @@ async function dashscopeImage(prompt, { aspect = 'square', reference = null, siz
   // 中转不可用时才尝试直连（直连在浏览器里通常会因跨域失败）
   let proxyError = null;
   if (isTokenPlan && API_BASE) {
+    // 先做一次轻量健康自检：快速区分"中转不可达"（网络问题）与"生成超时"，
+    // 避免用户等完整生成后才看到 Failed to fetch
+    try {
+      const healthResp = await fetch(apiUrl('/api/health'), { signal: AbortSignal.timeout(8000) });
+      if (!healthResp.ok) throw new Error('HTTP ' + healthResp.status);
+    } catch (healthError) {
+      throw new Error(`中转服务不可达：当前网络访问不了 test-xinyang.vercel.app（${healthError.message || 'Failed to fetch'}）。请先在你浏览器打开 https://test-xinyang.vercel.app/api/health 自测：打不开 = 本地网络/运营商拦截（公司 VPN 环境下通常可访问）；若确认打不开，请把图片服务商换成「阿里云百炼（按量）直连」（浏览器可直连、不依赖中转），或换到能访问 vercel.app 的网络重试。`);
+    }
     try {
       const proxyResp = await fetch(apiUrl('/api/token-plan-image'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(75000),
         body: JSON.stringify({
           apiKey: img.key,
           model,
@@ -356,7 +365,7 @@ async function dashscopeImage(prompt, { aspect = 'square', reference = null, siz
   if (!response) {
     if (isTokenPlan) {
       throw new Error(
-        `Token Plan 接口不支持浏览器直连（官方未开放跨域），必须走服务端中转；中转调用失败：${proxyError ? proxyError.message : '中转后端未部署或不可达'}。请确认中转后端（test-xinyang.vercel.app）已部署且网络可访问；若仍不行，可在图片服务商里改用「阿里云百炼」（按量）或硅基流动直连生成。`
+        `Token Plan 接口不支持浏览器直连（官方未开放跨域），必须走服务端中转；中转调用失败：${proxyError ? proxyError.message : '中转后端未部署或不可达'}。请先在你浏览器打开 https://test-xinyang.vercel.app/api/health 自测：打不开 = 当前网络访问不了该中转（公司 VPN 环境下通常可访问），请换网络或改用「阿里云百炼（按量）直连」（浏览器可直连、不依赖中转，参考图编辑同样可用）；若 health 能打开但生成超时，说明中转 60 秒上限被触发，可把参考图再压缩后重试。`
       );
     }
     throw new Error(`${providerLabel}接口连接失败（网络或跨域被拦截），请刷新后重试，或检查图片接口地址。`);
@@ -498,7 +507,9 @@ function updatePosterEngineLine() {
     return;
   }
   const mode = img.provider === 'qianwen' ? 'Token Plan 中转' : '百炼直连';
-  el.textContent = `当前图片引擎：${img.model}（${mode}）—— 与阿里云控制台同参数直连`;
+  el.textContent = img.provider === 'qianwen'
+    ? `当前图片引擎：${img.model}（${mode}，依赖 test-xinyang.vercel.app）—— 若生成报 Failed to fetch，说明当前网络访问不了该中转，可改用「阿里云百炼（按量）直连」`
+    : `当前图片引擎：${img.model}（${mode}）—— 浏览器可直接调用，与阿里云控制台同参数`;
 }
 
 /* 图片模型：下拉选项与"自定义模型"输入框联动 */
