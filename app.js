@@ -2393,6 +2393,18 @@ function clearPosterRefs() {
   if (grid) grid.querySelectorAll('.kb-img.on').forEach(el => el.classList.remove('on'));
 }
 
+/* 选好参考图后立即提示，避免"以为传了参考图其实没挂上" */
+const aiPosterRefInput = $('aiPosterRef');
+if (aiPosterRefInput) {
+  aiPosterRefInput.addEventListener('change', () => {
+    const file = aiPosterRefInput.files[0];
+    const status = $('aiPosterStatus');
+    if (status) status.textContent = file
+      ? `已选择参考图：${file.name}（将严格按此图的版式/配色/风格生成）`
+      : '';
+  });
+}
+
 $('aiPosterBtn').onclick = async event => {
   const button = event.currentTarget;
   const t0 = Date.now();
@@ -2449,11 +2461,12 @@ $('aiPosterBtn').onclick = async event => {
     const lengthLine = extraText.length > 60
       ? '若文字较多，海报整体可沿参考图风格纵向自然延伸拉长，确保所有文字完整放下，延伸后仍是同一套版式与视觉语言。'
       : '';
-    prompt = `请以参考图为准，生成一张成品海报。参考图是唯一的设计基准，优先级最高：
-【参考图（最高优先级）】严格一比一复刻参考图的整体风格、配色、字体、标题位置、卖点排版、元素与装饰，不得另起炉灶、不得自由发挥、不得擅自更换色调或改变版式；参考图就是模板，只允许按下面的要求替换/补充内容。
-【比例】画面比例默认与参考图一致；用户明确要求的方向或比例优先。${lengthLine}
-【用户要求（仅对以下内容做修改或补充，其余保持参考图原样）】${instruction || '按参考图原样生成，只做清晰化处理'}${assetTextBlock}
-【质量要求】中文文字准确、无错别字、无乱码；所有文字完整显示、不超出边缘、不被截断；画面铺满整张图，四周无白边、白框或留白；整体保持参考图的商业海报质感。`;
+    prompt = `请以这张参考图为基础，编辑生成一张成品海报。参考图是唯一的设计基准，必须完整保留、不得重新设计：
+1. 完整保留参考图的构图、版式、配色、字体、标题位置、元素、装饰与整体氛围，逐一对齐，不要另起炉灶、不要自由发挥、不要擅自更换色调或改变版式；
+2. 只按下面的用户要求替换/补充画面内容与文字，未提到的部分保持参考图原样；
+3. 画面比例默认与参考图一致；用户明确要求的方向或比例优先。${lengthLine}
+用户要求：${instruction || '按参考图原样输出，只做清晰化处理'}${assetTextBlock}
+质量要求：中文文字准确、无错别字、无乱码；所有文字完整显示、不超出边缘、不被截断；画面铺满整张图，四周无白边、白框或留白；整体保持参考图的商业海报质感。`;
   } else {
     // 无参考图：纯文字生成，保留必要的防乱码/防白边约束
     prompt = `请生成一张${psize.label}${ratioText}的酒店营销海报成品图，输出比例严格为${ratioText}。
@@ -2546,7 +2559,9 @@ $('aiPosterBtn').onclick = async event => {
     });
     generatedOk = true;
     progress.done();
-    $('aiPosterStatus').textContent = `成品海报已生成（引擎：${imgCfg.model}${hasRef ? '·参考图编辑' : ''}）。画布已更新为成品海报，可直接下载或微调。`;
+    $('aiPosterStatus').textContent = hasRef
+      ? `成品海报已生成（已按参考图编辑，引擎：${imgCfg.model}）。画布已更新为成品海报，可直接下载或微调。`
+      : `成品海报已生成（本次为纯文字生成，未附参考图；若要参考图请先上传或点选知识库配图）。画布已更新为成品海报，可直接下载或微调。`;
   } catch (error) {
     $('aiPosterStatus').textContent = `生成失败：${error.message}`;
     progress.fail();
