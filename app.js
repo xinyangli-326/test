@@ -2562,11 +2562,10 @@ $('aiEditBtn').onclick = async event => {
     temp.getContext('2d').drawImage(canvas, 0, 0, temp.width, temp.height);
     const reference = temp.toDataURL('image/jpeg', 0.92);
     const psize = posterSizeInfo();
-    const gcd = (a, b) => (b ? gcd(b, a % b) : a);
-    const ratioText = `${psize.w / gcd(psize.w, psize.h)}:${psize.h / gcd(psize.w, psize.h)}`;
-    const prompt = `请基于这张海报进行编辑，严格执行用户指令：${cmd}。只在必要处修改，保持整体版式、风格、配色与参考海报一致；输出画面铺满整张图，四周无白边、白框、留白或空隙；中文文字准确、无错别字、无乱码，${psize.label}${ratioText}，商业海报质感。`;
     const aspectKey = psize.ratio > 1.1 ? '16:9' : (psize.ratio < 0.9 ? '9:16' : 'square');
-    // AI 编辑与阿里云控制台默认一致：不锁尺寸，由模型 auto 推荐输出分辨率
+    // AI 编辑完全 auto：尺寸/比例不写死在提示词里，由编辑指令和参考图共同决定；
+    // 指令若要求改变方向、比例或尺寸（如"改成横版长图"），模型按指令调整，画布随后自动匹配
+    const prompt = `请基于这张海报进行编辑，严格执行用户指令：${cmd}。指令未要求改动的部分保持与参考海报一致；若指令要求改变方向、比例或尺寸，则按指令调整；输出画面铺满整张图，四周无白边、白框、留白或空隙；中文文字准确、无错别字、无乱码，商业海报质感。`;
     const src = await openAILikeImage(prompt, { aspect: aspectKey, reference });
     const image = new Image();
     image.src = src;
