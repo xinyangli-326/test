@@ -1413,7 +1413,22 @@ function openHistoryDetail(record) {
 function loadPosterRecord(record) {
   const image = new Image();
   image.onload = () => {
-    snapshot();
+    // 画布自动匹配海报本身的比例/尺寸，避免用残留画布尺寸 cover 裁剪截断海报
+    const iw = image.naturalWidth || image.width;
+    const ih = image.naturalHeight || image.height;
+    const iRatio = iw / ih;
+    let w = Math.round(record.width || 0);
+    let h = Math.round(record.height || 0);
+    if (!(w >= 200 && h >= 200) || Math.abs((w / h) - iRatio) > 0.03) {
+      if (iRatio >= 1) {
+        w = 1440;
+        h = Math.round(1440 / iRatio);
+      } else {
+        h = 1440;
+        w = Math.round(1440 * iRatio);
+      }
+    }
+    setPosterSize(w, h);
     backgroundImage = image;
     backgroundInfo = { mode: 'history', style: record.style || '历史记录' };
     objects = objects.filter(object => object.type !== 'text');
