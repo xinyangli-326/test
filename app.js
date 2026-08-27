@@ -1233,7 +1233,7 @@ function saveCopyHistory(record) {
     content: '',
     ...record
   });
-  if (copyHistory.length > 100) copyHistory = copyHistory.slice(0, 100);
+  if (copyHistory.length > 500) copyHistory = copyHistory.slice(0, 500);
   while (copyHistory.length && !lsSet(LS.copyHistory, copyHistory)) copyHistory.pop();
 }
 
@@ -1251,12 +1251,12 @@ function savePosterHistory(record) {
     image: '',
     ...record
   });
-  if (posterHistory.length > 12) posterHistory = posterHistory.slice(0, 12);
-  // localStorage 空间不够时自动淘汰最旧记录，保证历史可用
+  // 不设人为条数上限：尽量多保留历史。
+  // localStorage 空间不够时自动淘汰最旧记录，保证历史始终可用（浏览器存储本身有限，这是唯一硬限制）
   while (posterHistory.length && !lsSet(LS.posterHistory, posterHistory)) posterHistory.pop();
 }
 
-async function posterHistoryImage(src, maxSide = 1440, quality = 0.85) {
+async function posterHistoryImage(src, maxSide = 900, quality = 0.78) {
   try {
     if (!/^data:image/i.test(src)) return src;
     const image = new Image();
