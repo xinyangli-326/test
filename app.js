@@ -2488,7 +2488,8 @@ $('aiPosterBtn').onclick = async event => {
         const kbResp = await fetch(selectedKbImage);
         const kbBlob = await kbResp.blob();
         const kbFile = new File([kbBlob], 'kb.png', { type: kbBlob.type || 'image/png' });
-        const resized = await resizeImageFile(kbFile, 1536);
+        // 参考图压缩到 1280 并统一转 JPG：显著减小请求体积，降低中转超时概率
+        const resized = await resizeImageFile(kbFile, 1280, { forceJpeg: true, quality: 0.85 });
         kbDataUrl = resized.dataUrl;
       } catch (kbError) {
         throw new Error(`知识库配图读取失败：${kbError.message}，请重新选择参考图后再试。`);
@@ -2501,7 +2502,7 @@ $('aiPosterBtn').onclick = async event => {
     } else if (file) {
       let dataUrl = '';
       try {
-        const resized = await resizeImageFile(file, 1536);
+        const resized = await resizeImageFile(file, 1280, { forceJpeg: true, quality: 0.85 });
         dataUrl = resized.dataUrl;
       } catch (fileError) {
         throw new Error(`参考图读取失败：${fileError.message}，请重新上传参考图后再试。`);
@@ -2660,7 +2661,7 @@ function referenceNaturalSize(fileOrUrl) {
   });
 }
 
-function resizeImageFile(file, maxSide) {
+function resizeImageFile(file, maxSide, { forceJpeg = false, quality = 0.9 } = {}) {
   return new Promise((resolve, reject) => {
     loadImageFile(file, image => {
       const scale = Math.min(1, maxSide / Math.max(image.width, image.height));
@@ -2670,8 +2671,8 @@ function resizeImageFile(file, maxSide) {
       temp.width = width;
       temp.height = height;
       temp.getContext('2d').drawImage(image, 0, 0, width, height);
-      const mime = file.type.includes('png') ? 'image/png' : 'image/jpeg';
-      resolve({ dataUrl: temp.toDataURL(mime, 0.9), mime });
+      const mime = forceJpeg ? 'image/jpeg' : (file.type.includes('png') ? 'image/png' : 'image/jpeg');
+      resolve({ dataUrl: temp.toDataURL(mime, quality), mime });
     });
   });
 }
