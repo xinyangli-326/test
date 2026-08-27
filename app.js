@@ -237,7 +237,7 @@ async function openAILikeChat(system, user, { maxTokens = 3000, temperature = 0.
   return content;
 }
 
-async function dashscopeImage(prompt, { aspect = 'square', reference = null, size = '', strictRef = false } = {}) {
+async function dashscopeImage(prompt, { aspect = 'square', reference = null, size = '', strictRef = false, onStatus = null } = {}) {
   const img = getImageConfig();
   const isTokenPlan = img.provider === 'qianwen';
   const providerLabel = isTokenPlan ? 'Token Plan' : '百炼';
@@ -280,41 +280,92 @@ async function dashscopeImage(prompt, { aspect = 'square', reference = null, siz
     } catch (healthError) {
       throw new Error(`中转服务不可达：当前网络访问不了 test-xinyang.vercel.app（${healthError.message || 'Failed to fetch'}）。请先在你浏览器打开 https://test-xinyang.vercel.app/api/health 自测：打不开 = 本地网络/运营商拦截（公司 VPN 环境下通常可访问）；若确认打不开，请把图片服务商换成「阿里云百炼（按量）直连」（浏览器可直连、不依赖中转），或换到能访问 vercel.app 的网络重试。`);
     }
+    const proxyBody = {
+      apiKey: img.key,
+      model,
+      prompt,
+      reference: isEdit ? reference : '',
+      size: parameters.size || '',
+      prompt_extend: parameters.prompt_extend === undefined ? undefined : !!parameters.prompt_extend,
+      negative_prompt: parameters.negative_prompt || '',
+      watermark: parameters.watermark !== false
+    };
+    // 异步任务制（推荐）：提交秒回 task_id，再轮询结果，绕开中转 60 秒上限
+    let taskId = '';
     try {
-      const proxyResp = await fetch(apiUrl('/api/token-plan-image'), {
+      const submitResp = await fetch(apiUrl('/api/token-plan-image-async'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        signal: AbortSignal.timeout(75000),
-        body: JSON.stringify({
-          apiKey: img.key,
-          model,
-          prompt,
-          reference: isEdit ? reference : '',
-          size: parameters.size || '',
-          prompt_extend: parameters.prompt_extend === undefined ? undefined : !!parameters.prompt_extend,
-          negative_prompt: parameters.negative_prompt || '',
-          watermark: parameters.watermark !== false
-        })
+        signal: AbortSignal.timeout(30000),
+        body: JSON.stringify(proxyBody)
       });
-      if (proxyResp.ok) {
-        const proxyCt = proxyResp.headers.get('content-type') || '';
-        if (!proxyCt.includes('application/json')) {
-          throw new Error('中转后端返回的不是 JSON（可能被 Vercel 部署保护/认证页拦截，需到 vercel.com 关闭 Deployment Protection）');
-        }
-        const proxyData = await proxyResp.json();
-        if (proxyData.image) {
-          return proxyData.image.startsWith('data:') ? proxyData.image : toSafeDataURL(proxyData.image);
-        }
-        throw new Error(proxyData.error || '中转未返回图片');
+      const submitCt = submitResp.headers.get('content-type') || '';
+      if (!submitCt.includes('application/json')) {
+        throw new Error('中转后端返回的不是 JSON（可能被 Vercel 部署保护/认证页拦截）');
       }
-      const proxyCt = proxyResp.headers.get('content-type') || '';
-      if (proxyCt.includes('application/json')) {
-        const proxyErr = await proxyResp.json().catch(() => ({}));
-        throw new Error(proxyErr.error || `中转接口错误（${proxyResp.status}）`);
-      }
-      throw new Error(`中转接口错误（${proxyResp.status}，非 JSON 响应，可能被 Vercel 部署保护拦截）`);
+      const submitData = await submitResp.json();
+      if (!submitResp.ok) throw new Error(submitData.error || `中转接口错误（${submitResp.status}）`);
+      taskId = submitData.task_id || '';
+      if (!taskId) throw new Error(submitData.error || '异步提交未返回任务 ID');
     } catch (error) {
       proxyError = error;
+    }
+    if (taskId) {
+      try {
+        const startedAt = Date.now();
+        while (Date.now() - startedAt < 600000) {
+          await new Promise(resolve => setTimeout(resolve, 5000));
+          const taskResp = await fetch(apiUrl('/api/token-plan-image-task'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            signal: AbortSignal.timeout(25000),
+            body: JSON.stringify({ task_id: taskId, apiKey: img.key })
+          });
+          const taskData = await taskResp.json().catch(() => ({}));
+          if (!taskResp.ok) throw new Error(taskData.error || `任务查询失败（${taskResp.status}）`);
+          const status = String(taskData.task_status || 'RUNNING');
+          if (status === 'SUCCEEDED' && taskData.image_url) {
+            if (typeof onStatus === 'function') onStatus('已完成，正在下载图片');
+            return toSafeDataURL(taskData.image_url);
+          }
+          if (status === 'FAILED') {
+            throw new Error(taskData.message || '图片任务生成失败');
+          }
+          if (typeof onStatus === 'function') onStatus(status === 'RUNNING' ? '模型生成中（异步任务）' : status);
+        }
+        throw new Error('图片任务超过 10 分钟仍未完成，请稍后重试');
+      } catch (error) {
+        proxyError = error;
+      }
+    } else {
+      // 异步提交不可用（如套餐模型不支持异步）时，回退旧同步中转（任务未创建，不会重复扣费）
+      try {
+        const proxyResp = await fetch(apiUrl('/api/token-plan-image'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: AbortSignal.timeout(75000),
+          body: JSON.stringify(proxyBody)
+        });
+        if (proxyResp.ok) {
+          const proxyCt = proxyResp.headers.get('content-type') || '';
+          if (!proxyCt.includes('application/json')) {
+            throw new Error('中转后端返回的不是 JSON（可能被 Vercel 部署保护/认证页拦截，需到 vercel.com 关闭 Deployment Protection）');
+          }
+          const proxyData = await proxyResp.json();
+          if (proxyData.image) {
+            return proxyData.image.startsWith('data:') ? proxyData.image : toSafeDataURL(proxyData.image);
+          }
+          throw new Error(proxyData.error || '中转未返回图片');
+        }
+        const proxyCt = proxyResp.headers.get('content-type') || '';
+        if (proxyCt.includes('application/json')) {
+          const proxyErr = await proxyResp.json().catch(() => ({}));
+          throw new Error(proxyErr.error || `中转接口错误（${proxyResp.status}）`);
+        }
+        throw new Error(`中转接口错误（${proxyResp.status}，非 JSON 响应，可能被 Vercel 部署保护拦截）`);
+      } catch (error) {
+        proxyError = error;
+      }
     }
   }
   // Token Plan：sk-sp- 专属 Key 只认 token-plan 域名，绝不回退百炼通用域名；
@@ -456,10 +507,10 @@ async function toSafeDataURL(src) {
   }
 }
 
-async function openAILikeImage(prompt, { aspect = 'square', reference = null, size = '', strictRef = false } = {}) {
+async function openAILikeImage(prompt, { aspect = 'square', reference = null, size = '', strictRef = false, onStatus = null } = {}) {
   const img = getImageConfig();
   if (!img) throw new Error(imageConfigError());
-  if (img.provider === 'dashscope' || img.provider === 'qianwen') return dashscopeImage(prompt, { aspect, reference, size, strictRef });
+  if (img.provider === 'dashscope' || img.provider === 'qianwen') return dashscopeImage(prompt, { aspect, reference, size, strictRef, onStatus });
   if (reference) throw new Error('参考图编辑仅支持阿里云百炼 / 千问AI平台 Token Plan（qwen-image-3.0 / qwen-image-3.0-pro / qwen-image-2.0-pro），请在图片服务商里选择百炼或 Token Plan');
   const base = img.base.replace(/\/+$/, '');
   const model = img.model;
@@ -2485,7 +2536,14 @@ $('aiPosterBtn').onclick = async event => {
 硬性要求：画面铺满整张图，四周无白边、白框、留白或空隙；图片内中文文字准确、无错别字、无乱码；所有文字完整显示、不得超出边缘或被截断；标题醒目、卖点清晰、信息层级分明、商业海报质感。只呈现指令明确要求的内容：指令未提到的配色（尤其是橘金/香槟/金色系）、卡通动物贴纸、动物插画或装饰元素一律不得出现；若指令未指定配色，使用干净自然、贴合主题的配色，不预设任何固定色调。`;
   }
   const aspectKey = psize.ratio > 1.1 ? '16:9' : (psize.ratio < 0.9 ? '9:16' : 'square');
-  const genOpts = { aspect: aspectKey, size: psize.api };
+  const genOpts = {
+    aspect: aspectKey,
+    size: psize.api,
+    onStatus: (s) => {
+      const el = $('aiPosterStatus');
+      if (el) el.textContent = `AI 生成中（${s}）…`;
+    }
+  };
   button.textContent = 'AI生成中…';
   const refNote = file ? '（附上传参考图）' : (selectedKbImage ? '（附知识库配图参考）' : '');
   $('aiPosterStatus').textContent = `正在按指令生成：${instruction.slice(0, 50)}${instruction.length > 50 ? '…' : ''}${refNote}`;

@@ -38,15 +38,18 @@ STICKER_STYLES = {
 TOKEN_PLAN_BASE = "https://token-plan.cn-beijing.maas.aliyuncs.com"
 
 
-def _token_plan_call(url, api_key, payload, timeout=90):
+def _token_plan_call(url, api_key, payload, timeout=90, headers=None):
     import requests
 
+    req_headers = {
+        "Authorization": "Bearer " + api_key,
+        "Content-Type": "application/json",
+    }
+    if headers:
+        req_headers.update(headers)
     resp = requests.post(
         url,
-        headers={
-            "Authorization": "Bearer " + api_key,
-            "Content-Type": "application/json",
-        },
+        headers=req_headers,
         json=payload,
         timeout=timeout,
     )
@@ -176,6 +179,94 @@ def token_plan_image(p):
     return {
         "image": "data:image/png;base64," + base64.b64encode(img_resp.content).decode()
     }
+
+
+def token_plan_image_async(p):
+    """Token Plan 图片异步提交：立即返回 task_id，不阻塞等待。
+    生图耗时长（尤其参考图编辑），同步中转会被 Vercel 函数 60s 上限掐断，
+    改用异步任务制后，中转函数只负责快速提交与轻量轮询，彻底绕开 60s 限制。"""
+    api_key = str(p.get("apiKey") or "").strip()
+    if not api_key:
+        raise ValueError("缺少 Token Plan API Key")
+    model = str(p.get("model") or "qwen-image-3.0-pro").strip()
+    prompt = str(p.get("prompt") or "").strip()
+    if not prompt:
+        raise ValueError("缺少图片描述")
+    content = []
+    reference = str(p.get("reference") or "")
+    if reference.startswith("data:image"):
+        content.append({"image": reference})
+    content.append({"text": prompt})
+    parameters = {"watermark": False}
+    if "prompt_extend" in p:
+        parameters["prompt_extend"] = bool(p.get("prompt_extend"))
+    size = str(p.get("size") or "").strip()
+    if size:
+        parameters["size"] = size
+    negative_prompt = str(p.get("negative_prompt") or "").strip()
+    if negative_prompt:
+        parameters["negative_prompt"] = negative_prompt
+    payload = {
+        "model": model,
+        "input": {"messages": [{"role": "user", "content": content}]},
+        "parameters": parameters,
+    }
+    resp = _token_plan_call(
+        TOKEN_PLAN_BASE + "/api/v1/services/aigc/image-generation/generation",
+        api_key,
+        payload,
+        timeout=30,
+        headers={"X-DashScope-Async": "enable"},
+    )
+    if resp.status_code != 200:
+        raise RuntimeError(_token_plan_error(resp, "图片"))
+    data = resp.json()
+    out = data.get("output") or {}
+    task_id = out.get("task_id") or data.get("task_id") or ""
+    if not task_id:
+        raise ValueError("Token Plan 图片异步接口未返回 task_id：" + str(data)[:200])
+    return {"task_id": task_id, "task_status": out.get("task_status") or "PENDING"}
+
+
+def token_plan_image_task(p):
+    """Token Plan 图片任务轮询中转：GET /tasks/{task_id}"""
+    api_key = str(p.get("apiKey") or "").strip()
+    task_id = str(p.get("task_id") or "").strip()
+    if not api_key:
+        raise ValueError("缺少 Token Plan API Key")
+    if not task_id:
+        raise ValueError("缺少图片任务 ID")
+    resp = _token_plan_get(
+        TOKEN_PLAN_BASE + "/api/v1/tasks/" + task_id,
+        api_key,
+        timeout=30,
+    )
+    if resp.status_code != 200:
+        raise RuntimeError(_token_plan_error(resp, "图片"))
+    data = resp.json()
+    out = data.get("output") or {}
+    task_status = str(out.get("task_status") or data.get("task_status") or "RUNNING").upper()
+    image_url = ""
+    results = out.get("results")
+    if isinstance(results, list):
+        for item in results:
+            if isinstance(item, dict):
+                image_url = str(item.get("url") or item.get("image") or "")
+                if image_url:
+                    break
+    if not image_url and isinstance(out.get("images"), list):
+        for item in out["images"]:
+            if isinstance(item, dict):
+                image_url = str(item.get("url") or "")
+                if image_url:
+                    break
+    if not image_url:
+        image_url = str(out.get("image_url") or out.get("image") or "")
+    result = {"task_id": task_id, "task_status": task_status, "image_url": image_url}
+    message = out.get("message") or out.get("error") or data.get("message") or ""
+    if message:
+        result["message"] = str(message)[:500]
+    return result
 
 
 def _token_plan_get(url, api_key, timeout=30):
