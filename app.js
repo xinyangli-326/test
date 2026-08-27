@@ -1751,18 +1751,45 @@ const CHANNEL_FORMATS = {
 const KNOWLEDGE_STANCE = `平台立场（最高优先级，必须严格遵守）：你是携程酒店服务市场（Hmall）的内容运营。
 服务市场是酒店B2B一站式采购与服务平台：服务商/供应商把酒店经营所需的产品与服务
 （主题房方案、酒店用品、布草、设施、设计、旅拍、运营服务等）上架到服务市场，
-酒店客户在平台上浏览、比价、下单、支付与售后，采购成本可降低10%-30%。
+酒店客户在平台上浏览、比价、下单、支付与售后。
 『上新』指产品/服务在服务市场上架，而不是酒店房型上新。
-所有内容必须站在服务市场/商家面向酒店客户的角度：讲清楚产品为酒店创造什么价值、
-为什么在服务市场采购更省心（放心、低价、一站式、售后支持）、如何登录服务市场了解或下单。
+所有内容站在服务市场/商家面向酒店客户的角度，但必须按内容类型区分主次：
+· 产品/主题房/酒店运营类（产品类、干货类）：以产品/方案本身为核心，讲清它为酒店创造的价值；
+  可适度引用平台优势与免房置换作为采购理由（这是允许的），但不要展开六项保障、退换货、
+  售后、纠纷处理等平台内容，也不要写成"服务市场平台宣传稿"。
+· 平台规则/支付/活动类（平台类、支付类、活动类）：才重点展开讲解服务市场平台、六项保障、
+  下单支付流程、活动优惠等。
 不要把内容写成酒店经营者对住客的自我宣传（除非用户明确选择『酒店视角』）；
 涉及平台规则与官方表述，以携程酒店商家管理后台官网（ebooking.ctrip.com/hmall/index）
 及服务市场官方页面为准，不要凭空编造；联网搜索结果仅作事实与趋势参考，不要照搬其表述视角。`;
 
-const PRODUCT_BRIEF = `服务市场产品与优势速览（写内容时可引用）：平台精选客房用品、酒店布草、酒店设施、
-视觉设计、特色服务五大品类、上千个SKU；主题房改造（亲子房、宠物友好房、影音房、舒睡房等）
-是设计+物资配置+运营营销的一站式方案；官方六大服务保障：免房置换、低价保证、送货到店、
-快速开票、先行赔付、7天无理由退货；供应商-平台-酒店三步直达，集采成本可降低10%-30%（参考值）。`;
+const PRODUCT_BRIEF = `服务市场在售产品速览（写内容时可引用）：客房用品、酒店布草、酒店设施、智能化、
+视觉设计、特色服务等品类上千个SKU；主题房改造（亲子房、宠物友好房、影音房、舒睡房等）
+是设计+物资配置+运营营销的一站式方案，酒店可按需选择、一站配齐（具体价格以服务市场页面为准）。`;
+
+/* 文案口径清洗：去掉退换货/纠纷等地掉价的措辞，避免模型引用或写出 */
+function cleanMarketText(text) {
+  return String(text || '')
+    .replace(/7天无理由退货/g, '')
+    .replace(/无理由退货/g, '')
+    .replace(/退换货/g, '')
+    .replace(/退货/g, '')
+    .replace(/防纠纷/g, '')
+    .replace(/纠纷/g, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
+/* 产品/干货内容用：只保留免房置换、集采、灵活结算等"可作采购理由"的平台支撑，
+   过滤掉放心/低价/售后/退换/纠纷等平台套话，避免产品文案写成平台宣传稿 */
+function platformSupportForProduct(text) {
+  const lines = Array.isArray(text) ? text : String(text || '').split('\n');
+  const kept = lines
+    .map(l => String(l).replace(/^[·\s]+/, ''))
+    .filter(l => l && !/放心|低价|售后|退换|退货|纠纷|赔付|保障/.test(l));
+  const joined = kept.join('；');
+  return cleanMarketText(joined) || '免房置换、一站式集采、灵活结算等平台优势（具体以服务市场页面为准）';
+}
 
 function knowledgeContext(payload) {
   const cat = knowledge.categories?.[payload.category] || {};
@@ -1811,18 +1838,21 @@ function knowledgeContext(payload) {
     ? live.key_coupons.map(c => `· ¥${c.amount} ${c.threshold}｜${c.scope}${c.note ? '｜' + c.note : ''}`).join('\n')
     : '';
   const stats = live.platform_stats || {};
+  const isProductFocus = ['product', 'insight'].includes(payload.category);
   const sections = [];
-  if (mp.what_is) sections.push(`【服务市场是什么】${mp.what_is}`);
+  if (!isProductFocus && mp.what_is) sections.push(`【服务市场是什么】${mp.what_is}`);
   sections.push(`【服务市场产品体系】\n${catalog || PRODUCT_BRIEF}`);
-  if (guarantees) sections.push(`【官方六大服务保障】${guarantees}`);
-  if (advantages) sections.push(`【平台优势】\n${advantages}`);
+  if (!isProductFocus && guarantees) sections.push(`【官方六大服务保障】${guarantees}`);
+  if (advantages) sections.push(isProductFocus
+    ? `【平台支撑（可选引用，点到即止，不要把平台套话当产品卖点）】\n${platformSupportForProduct(advantages)}`
+    : `【平台优势】\n${advantages}`);
   if (liveCats.length) {
     sections.push(`【服务市场实时商品库（${live.updated_at || '最近抓取'}快照）】
 平台大盘：${stats.suppliers || '—'}家供应商｜年销量${stats.annual_sales_orders || '—'}单｜在售商品${stats.sku_count || '—'}种
 ${liveCatBlock || '（当前分类暂无明细，可参考其他分类）'}`);
   }
   if (flagshipBlock) sections.push(`【服务市场热销/上新好物参考】\n${flagshipBlock}`);
-  if (couponBlock) sections.push(`【服务市场当前活动券参考】\n${couponBlock}`);
+  if (!isProductFocus && couponBlock) sections.push(`【服务市场当前活动券参考】\n${couponBlock}`);
   if (live.update_note) sections.push(`【数据时效说明】${live.update_note}`);
   const larkDocs = Array.isArray(knowledge.lark_docs) ? knowledge.lark_docs : [];
   if (larkDocs.length) {
@@ -1836,7 +1866,7 @@ ${liveCatBlock || '（当前分类暂无明细，可参考其他分类）'}`);
   }
   sections.push(`【当前知识库分类】${catName}：${cat.description || ''}${topics ? '（可参考主题：' + topics + '）' : ''}`);
   if (mp.official_site) sections.push(`【官方来源】${mp.official_site}——涉及平台规则以官方页面为准`);
-  return sections.join('\n\n');
+  return cleanMarketText(sections.join('\n\n'));
 }
 
 function buildSystemPrompt(payload) {
@@ -1873,7 +1903,10 @@ ${wordRequirement}
 4. 若用户给出已有文案或细节要求（调整细节、强调IP、强调功能、强调价格），先理解原意再改写，不丢失关键信息。
 5. 内部数字写成参考值，不编造平台规则；避免“值得注意的是”“综上所述”“在这个…的时代”等AI腔。
 ${wantsCompare ? `6. 本任务需要品牌对比/分析：必须从【服务市场实时商品库】与【热销/上新好物参考】中引用真实在售品牌与商品名（如红杉树、尊客、恒创、悦诗兰庭、洁柔、小帅、奶龙、B.Duck、梦百合等），逐品牌说明定位、代表商品、价格区间、销量/好评与适用酒店场景；禁止用“某品牌”“部分品牌”“一些品牌”等含糊表述代替具体品牌名。若知识库中某品类缺少品牌数据，如实说明“该品类暂无明确品牌数据”，不得编造。` : ''}
-7. 涉及具体价格、销量、优惠券时，标注“参考价/参考销量”，并提示以服务市场页面为准。`;
+7. 涉及具体价格、销量、优惠券时，标注“参考价/参考销量”，并提示以服务市场页面为准。
+8. 效果类表述只做定性：提到“点评提升”“房价提升”“入住率提升”等效果时，写“助力点评提升”“带动房价提升”这类定性表达，不要给出具体百分比或数字；其余价格、销量等数字可用，但注明“参考值/参考销量”。
+9. 不夸大、不过度承诺：禁止“一定”“保证”“100%”“立竿见影”“稳赚不赔”“从此无忧”等绝对化、夸张措辞；不写无法证实的承诺。
+10. 不使用“放心”“低价”“售后”“退换货”“退货”“纠纷”“防纠纷”“维权”等平台套话或掉价措辞，改用具体、实在、可感知的表达（免房置换、一站式集采等可正常使用）。`;
 }
 
 function buildGeneratePrompt(payload) {
