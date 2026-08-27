@@ -2439,24 +2439,33 @@ $('aiPosterBtn').onclick = async event => {
   const gcd = (a, b) => (b ? gcd(b, a % b) : a);
   const ratioText = `${psize.w / gcd(psize.w, psize.h)}:${psize.h / gcd(psize.w, psize.h)}`;
   const assetTextBlock = extraText
-    ? `\n画面内必须完整展示的文字（由你排版，一条都不能少、不能截断、不能改写）：\n${extraText}`
+    ? `\n【需要排版展示的文字】必须完整放进画面，由你排版，一条都不能少、不能截断、不能改写：\n${extraText}`
     : '';
-  const refInstruction = hasRef
-    ? '\n【参考海报（最高优先级）】严格沿用参考海报的风格、配色、字体与版式（标题位置、卖点排版方式、按钮/CTA样式），只替换/补充内容与文字，不得另起炉灶自由发挥；若参考图比例与目标画布不同，按参考图风格自然延伸背景与版式，四周不留白边。'
-    : '';
-  const lengthInstruction = hasRef && extraText.length > 60
-    ? '\n【长度要求】本海报文字内容较多，海报整体可以比参考图更长（宽度延续参考图风格，高度按内容自然延伸拉长），确保所有文字完整放下、不压缩、不截断。'
-    : '';
-  // 与阿里云控制台体验一致：指令原样交给模型，只保留必要约束，不塞入长篇背景文本；
-  // 不写死像素，只给比例，由模型 auto 推荐分辨率（更快，且与控制台一致）
-  const prompt = `请生成一张${psize.label}${ratioText}的酒店营销海报成品图，输出比例严格为${ratioText}。${refInstruction}
-用户指令（请严格执行）：${instruction}${lengthInstruction}${assetTextBlock}
+  let prompt;
+  if (hasRef) {
+    // 参考图优先模式：参考图是唯一设计基准，用户指令只描述替换/补充内容。
+    // 不再附带任何可能与参考图冲突的约束（不预设配色、不禁止装饰元素等），
+    // 避免模型收到矛盾指令后自由发挥出与参考图无关的海报。
+    const lengthLine = extraText.length > 60
+      ? '若文字较多，海报整体可沿参考图风格纵向自然延伸拉长，确保所有文字完整放下，延伸后仍是同一套版式与视觉语言。'
+      : '';
+    prompt = `请以参考图为准，生成一张成品海报。参考图是唯一的设计基准，优先级最高：
+【参考图（最高优先级）】严格一比一复刻参考图的整体风格、配色、字体、标题位置、卖点排版、元素与装饰，不得另起炉灶、不得自由发挥、不得擅自更换色调或改变版式；参考图就是模板，只允许按下面的要求替换/补充内容。
+【比例】画面比例默认与参考图一致；用户明确要求的方向或比例优先；${lengthLine}
+【用户要求（仅对以下内容做修改或补充，其余保持参考图原样）】${instruction || '按参考图原样生成，只做清晰化处理'}${assetTextBlock}
+【质量要求】中文文字准确、无错别字、无乱码；所有文字完整显示、不超出边缘、不被截断；画面铺满整张图，四周无白边、白框或留白；整体保持参考图的商业海报质感。`;
+  } else {
+    // 无参考图：纯文字生成，保留必要的防乱码/防白边约束
+    prompt = `请生成一张${psize.label}${ratioText}的酒店营销海报成品图，输出比例严格为${ratioText}。
+用户指令（请严格执行）：${instruction}${assetTextBlock}
 硬性要求：画面铺满整张图，四周无白边、白框、留白或空隙；图片内中文文字准确、无错别字、无乱码；所有文字完整显示、不得超出边缘或被截断；标题醒目、卖点清晰、信息层级分明、商业海报质感。只呈现指令明确要求的内容：指令未提到的配色（尤其是橘金/香槟/金色系）、卡通动物贴纸、动物插画或装饰元素一律不得出现；若指令未指定配色，使用干净自然、贴合主题的配色，不预设任何固定色调。`;
+  }
   const aspectKey = psize.ratio > 1.1 ? '16:9' : (psize.ratio < 0.9 ? '9:16' : 'square');
   const genOpts = { aspect: aspectKey, size: psize.api };
   button.textContent = 'AI生成中…';
   const refNote = file ? '（附上传参考图）' : (selectedKbImage ? '（附知识库配图参考）' : '');
   $('aiPosterStatus').textContent = `正在按指令生成：${instruction.slice(0, 50)}${instruction.length > 50 ? '…' : ''}${refNote}`;
+  let generatedOk = false;
   try {
     if (!hasByokImage()) {
       $('aiPosterStatus').textContent = imageConfigError();
@@ -2470,6 +2479,9 @@ $('aiPosterBtn').onclick = async event => {
     }
     let src;
     const imgCfg = getImageConfig();
+    // 参考图优先：一旦带了参考图，就绝不降级成纯文字生成，
+    // 否则模型会自由发挥出与参考图无关的海报。
+    const refRefuse = '已停止生成，未降级为纯文字模式（避免产出与参考图无关的海报）；请检查图片服务商是否支持参考图编辑，或重新上传参考图后重试';
     if (selectedKbImage) {
       let kbDataUrl = '';
       try {
@@ -2479,26 +2491,25 @@ $('aiPosterBtn').onclick = async event => {
         const resized = await resizeImageFile(kbFile, 1536);
         kbDataUrl = resized.dataUrl;
       } catch (kbError) {
-        kbDataUrl = '';
+        throw new Error(`知识库配图读取失败：${kbError.message}，请重新选择参考图后再试。`);
       }
-      if (kbDataUrl) {
-        try {
-          src = await openAILikeImage(prompt, { ...genOpts, reference: kbDataUrl, strictRef: true });
-        } catch (refError) {
-          src = await openAILikeImage(prompt, genOpts);
-          $('aiPosterStatus').textContent = `知识库配图编辑不可用（${refError.message}），已改用文字指令生成。`;
-        }
-      } else {
-        src = await openAILikeImage(prompt, genOpts);
-        $('aiPosterStatus').textContent = '知识库配图读取失败，已改用文字指令生成。';
+      try {
+        src = await openAILikeImage(prompt, { ...genOpts, reference: kbDataUrl, strictRef: true });
+      } catch (refError) {
+        throw new Error(`参考图生成失败：${refError.message}（${refRefuse}）`);
       }
     } else if (file) {
-      const { dataUrl } = await resizeImageFile(file, 1536);
+      let dataUrl = '';
+      try {
+        const resized = await resizeImageFile(file, 1536);
+        dataUrl = resized.dataUrl;
+      } catch (fileError) {
+        throw new Error(`参考图读取失败：${fileError.message}，请重新上传参考图后再试。`);
+      }
       try {
         src = await openAILikeImage(prompt, { ...genOpts, reference: dataUrl, strictRef: true });
       } catch (refError) {
-        src = await openAILikeImage(prompt, genOpts);
-        $('aiPosterStatus').textContent = `参考图编辑不可用（${refError.message}），已改用文字指令生成。`;
+        throw new Error(`参考图生成失败：${refError.message}（${refRefuse}）`);
       }
     } else {
       src = await openAILikeImage(prompt, genOpts);
@@ -2527,20 +2538,23 @@ $('aiPosterBtn').onclick = async event => {
       type: 'ai-poster',
       instruction,
       prompt,
-      engine: `${imgCfg.model}${(imgCfg.provider === 'dashscope' || imgCfg.provider === 'qianwen') && file ? '·参考图编辑' : ''}`,
+      engine: `${imgCfg.model}${hasRef ? '·参考图编辑' : ''}`,
       width: canvas.width,
       height: canvas.height,
       image: await posterHistoryImage(src)
     });
+    generatedOk = true;
     progress.done();
-    $('aiPosterStatus').textContent = `成品海报已生成（引擎：${imgCfg.model}${(imgCfg.provider === 'dashscope' || imgCfg.provider === 'qianwen') && file ? '·参考图编辑' : ''}）。画布已更新为成品海报，可直接下载或微调。`;
+    $('aiPosterStatus').textContent = `成品海报已生成（引擎：${imgCfg.model}${hasRef ? '·参考图编辑' : ''}）。画布已更新为成品海报，可直接下载或微调。`;
   } catch (error) {
     $('aiPosterStatus').textContent = `生成失败：${error.message}`;
     progress.fail();
   } finally {
     recordImageDuration(Date.now() - t0);
     button.textContent = '🪄 AI 生成成品海报';
-    clearPosterRefs();
+    // 生成成功才清空参考图，避免残留影响下一张；
+    // 生成失败时保留参考图，方便用户检查配置后直接重试
+    if (generatedOk) clearPosterRefs();
   }
 };
 
