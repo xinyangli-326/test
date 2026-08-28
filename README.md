@@ -38,12 +38,18 @@ AI海报底图（AI生成/上传/模板）、海报AI学习、多风格贴纸、
 
 推送到 `xinyangli-326/test` 仓库的 `main` 分支后，GitHub Actions 自动发布 Pages。
 
-### API
+### API（服务端中转）
 
-1. 将同一仓库导入 Vercel。
-2. Project Name 设置为 `test-xinyang`。
-3. 在 Vercel Environment Variables 设置 `OPENAI_API_KEY`。
-4. 部署后确认地址为 `https://test-xinyang.vercel.app`，或同步修改 `config.js`。
+「千问AI平台 Token Plan（阿里云月付套餐）」的文案/图片/视频接口不支持浏览器直接调用（跨域限制），
+必须经过一个**服务端中转**。中转需要能稳定访问阿里云内地节点，因此推荐部署到**阿里云函数计算(FC)**：
+
+1. 打开 `fc/` 目录，按 `fc/README.md` 的步骤在阿里云函数计算创建一个 **Web 函数**（Python 3.10、地域选华北2北京、
+   请求处理程序填 `index.handler`），上传 `fc-deploy.zip`，绑定 HTTP 触发器（无需鉴权），拿到公网地址。
+2. 在网站右上角「AI 设置」的「服务端中转接口地址」一栏填入该公网地址（末尾不要带 `/api`），保存并刷新。
+3. 其它电脑填入同一个地址即可共用月付套餐额度。
+
+> 早期曾用 Vercel（`test-xinyang.vercel.app`）做中转，但 Vercel 香港机房连阿里云内地接口超时，已不可靠，
+> 建议改用上述 FC 方案。`server.py` 也可在单机上启动本地中转（`python server.py`，仅限本机访问）。
 
 ## 安全
 

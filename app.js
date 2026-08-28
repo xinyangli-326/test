@@ -25,7 +25,14 @@ function maskSecrets(text, extraKeys = []) {
     m => m.slice(0, 4) + '…' + m.slice(-4));
   return out;
 }
-const API_BASE = (window.TRIP_MALL_CONFIG?.API_BASE || '').replace(/\/$/, '');
+function readProxyBase() {
+  try {
+    const saved = localStorage.getItem('tripMall.proxyBase');
+    if (saved && saved.trim()) return saved.trim().replace(/\/+$/, '');
+  } catch {}
+  return (window.TRIP_MALL_CONFIG?.API_BASE || '').replace(/\/+$/, '');
+}
+const API_BASE = readProxyBase();
 const apiUrl = path => API_BASE + path;
 
 async function apiRequest(path, payload, timeoutMs = 10000) {
@@ -249,7 +256,7 @@ async function openAILikeChat(system, user, { maxTokens = 3000, temperature = 0.
     const isLinkIssue = /timed out|timeout|connect|Failed to fetch|网络/i.test(firstError);
     const hint = isLinkIssue
       ? '（中转→阿里云连接受限，多为跨境链路临时抖动，已自动重试仍失败，请稍后再试；仍不行可把文字服务商改为 阿里云百炼按量 / DeepSeek / 硅基流动 直连，不依赖中转、更稳定）'
-      : '（请确认中转后端已部署且当前网络能访问 vercel.app；仍不行可把文字服务商改为 阿里云百炼按量 / DeepSeek / 硅基流动 直连）';
+      : `（请确认中转后端已部署且当前网络能访问 ${API_BASE || '中转地址'}；仍不行可把文字服务商改为 阿里云百炼按量 / DeepSeek / 硅基流动 直连）`;
     throw new Error(`Token Plan 文本生成失败：${firstError}${hint}`);
   }
   const base = (cfg.baseUrl || provider.base).replace(/\/+$/, '');
@@ -312,10 +319,10 @@ async function dashscopeImage(prompt, { aspect = 'square', reference = null, ref
     // 先做一次轻量健康自检：快速区分"中转不可达"（网络问题）与"生成超时"，
     // 避免用户等完整生成后才看到 Failed to fetch
     try {
-      const healthResp = await fetch(apiUrl('/api/health'), { signal: AbortSignal.timeout(8000) });
+      const healthResp = await fetch(apiUrl('/api/health'), { signal: AbortSignal.timeout(15000) });
       if (!healthResp.ok) throw new Error('HTTP ' + healthResp.status);
     } catch (healthError) {
-      throw new Error(`中转服务不可达：当前网络访问不了 test-xinyang.vercel.app（${healthError.message || 'Failed to fetch'}）。请先在你浏览器打开 https://test-xinyang.vercel.app/api/health 自测：打不开 = 本地网络/运营商拦截（公司 VPN 环境下通常可访问）；若确认打不开，请把图片服务商换成「阿里云百炼（按量）直连」（浏览器可直连、不依赖中转），或换到能访问 vercel.app 的网络重试。`);
+      throw new Error(`中转服务不可达：当前网络访问不了 ${API_BASE || '中转地址'}（${healthError.message || 'Failed to fetch'}）。请在你浏览器打开 ${API_BASE || '中转地址'}/api/health 自测：打不开 = 网络/运营商拦截，或该中转已下线；若确认打不开，请把图片服务商换成「阿里云百炼（按量）直连」（浏览器可直连、不依赖中转），或在「AI 设置 → 服务端中转接口地址」填入你在阿里云函数计算部署好的中转地址。`);
     }
     const proxyBody = {
       apiKey: img.key,
@@ -329,81 +336,30 @@ async function dashscopeImage(prompt, { aspect = 'square', reference = null, ref
       watermark: parameters.watermark !== false
     };
     // 异步任务制（推荐）：提交秒回 task_id，再轮询结果，绕开中转 60 秒上限
-    let taskId = '';
+    // Token Plan 图片为同步多模态生成（无稳定异步接口），直接走同步中转并放宽等待，避免异步挂起/重复计费
     try {
-      const submitResp = await fetch(apiUrl('/api/token-plan-image-async'), {
+      const proxyResp = await fetch(apiUrl('/api/token-plan-image'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        signal: AbortSignal.timeout(30000),
+        signal: AbortSignal.timeout(300000),
         body: JSON.stringify(proxyBody)
       });
-      const submitCt = submitResp.headers.get('content-type') || '';
-      if (!submitCt.includes('application/json')) {
-        throw new Error('中转后端返回的不是 JSON（可能被 Vercel 部署保护/认证页拦截）');
+      if (proxyResp.ok) {
+        const proxyCt = proxyResp.headers.get('content-type') || '';
+        if (!proxyCt.includes('application/json')) {
+          throw new Error('中转后端返回的不是 JSON（可能被部署保护/认证页拦截）');
+        }
+        const proxyData = await proxyResp.json();
+        if (proxyData.image) {
+          return proxyData.image.startsWith('data:') ? proxyData.image : toSafeDataURL(proxyData.image);
+        }
+        throw new Error(proxyData.error || '中转未返回图片');
       }
-      const submitData = await submitResp.json();
-      if (!submitResp.ok) throw new Error(submitData.error || `中转接口错误（${submitResp.status}）`);
-      taskId = submitData.task_id || '';
-      if (!taskId) throw new Error(submitData.error || '异步提交未返回任务 ID');
+      const proxyCt = proxyResp.headers.get('content-type') || '';
+      const proxyErr = proxyCt.includes('application/json') ? (await proxyResp.json().catch(() => ({}))) : {};
+      throw new Error(proxyErr.error || `中转接口错误（${proxyResp.status}）`);
     } catch (error) {
       proxyError = error;
-    }
-    if (taskId) {
-      try {
-        const startedAt = Date.now();
-        while (Date.now() - startedAt < 600000) {
-          await new Promise(resolve => setTimeout(resolve, 5000));
-          const taskResp = await fetch(apiUrl('/api/token-plan-image-task'), {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            signal: AbortSignal.timeout(25000),
-            body: JSON.stringify({ task_id: taskId, apiKey: img.key })
-          });
-          const taskData = await taskResp.json().catch(() => ({}));
-          if (!taskResp.ok) throw new Error(taskData.error || `任务查询失败（${taskResp.status}）`);
-          const status = String(taskData.task_status || 'RUNNING');
-          if (status === 'SUCCEEDED' && taskData.image_url) {
-            if (typeof onStatus === 'function') onStatus('已完成，正在下载图片');
-            return toSafeDataURL(taskData.image_url);
-          }
-          if (status === 'FAILED') {
-            throw new Error(taskData.message || '图片任务生成失败');
-          }
-          if (typeof onStatus === 'function') onStatus(status === 'RUNNING' ? '模型生成中（异步任务）' : status);
-        }
-        throw new Error('图片任务超过 10 分钟仍未完成，请稍后重试');
-      } catch (error) {
-        proxyError = error;
-      }
-    } else {
-      // 异步提交不可用（如套餐模型不支持异步）时，回退旧同步中转（任务未创建，不会重复扣费）
-      try {
-        const proxyResp = await fetch(apiUrl('/api/token-plan-image'), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          signal: AbortSignal.timeout(75000),
-          body: JSON.stringify(proxyBody)
-        });
-        if (proxyResp.ok) {
-          const proxyCt = proxyResp.headers.get('content-type') || '';
-          if (!proxyCt.includes('application/json')) {
-            throw new Error('中转后端返回的不是 JSON（可能被 Vercel 部署保护/认证页拦截，需到 vercel.com 关闭 Deployment Protection）');
-          }
-          const proxyData = await proxyResp.json();
-          if (proxyData.image) {
-            return proxyData.image.startsWith('data:') ? proxyData.image : toSafeDataURL(proxyData.image);
-          }
-          throw new Error(proxyData.error || '中转未返回图片');
-        }
-        const proxyCt = proxyResp.headers.get('content-type') || '';
-        if (proxyCt.includes('application/json')) {
-          const proxyErr = await proxyResp.json().catch(() => ({}));
-          throw new Error(proxyErr.error || `中转接口错误（${proxyResp.status}）`);
-        }
-        throw new Error(`中转接口错误（${proxyResp.status}，非 JSON 响应，可能被 Vercel 部署保护拦截）`);
-      } catch (error) {
-        proxyError = error;
-      }
     }
   }
   // Token Plan：sk-sp- 专属 Key 只认 token-plan 域名，绝不回退百炼通用域名；
@@ -454,7 +410,7 @@ async function dashscopeImage(prompt, { aspect = 'square', reference = null, ref
   if (!response) {
     if (isTokenPlan) {
       throw new Error(
-        `Token Plan 接口不支持浏览器直连（官方未开放跨域），必须走服务端中转；中转调用失败：${proxyError ? proxyError.message : '中转后端未部署或不可达'}。请先在你浏览器打开 https://test-xinyang.vercel.app/api/health 自测：打不开 = 当前网络访问不了该中转（公司 VPN 环境下通常可访问），请换网络或改用「阿里云百炼（按量）直连」（浏览器可直连、不依赖中转，参考图编辑同样可用）；若 health 能打开但生成超时，说明中转 60 秒上限被触发，可把参考图再压缩后重试。`
+        `Token Plan 接口不支持浏览器直连（官方未开放跨域），必须走服务端中转；中转调用失败：${proxyError ? proxyError.message : '中转后端未部署或不可达'}。请在你浏览器打开 ${API_BASE || '中转地址'}/api/health 自测：打不开 = 当前网络访问不了该中转，请改用「阿里云百炼（按量）直连」（浏览器可直连、不依赖中转，参考图编辑同样可用），或在「AI 设置 → 服务端中转接口地址」填入你在阿里云函数计算部署好的中转地址；若 health 能打开但生成超时，说明生成耗时较长，请把参考图再压缩后重试。`
       );
     }
     throw new Error(`${providerLabel}接口连接失败（网络或跨域被拦截），请刷新后重试，或检查图片接口地址。`);
@@ -597,7 +553,7 @@ function updatePosterEngineLine() {
   }
   const mode = img.provider === 'qianwen' ? 'Token Plan 中转' : '百炼直连';
   el.textContent = img.provider === 'qianwen'
-    ? `当前图片引擎：${img.model}（${mode}，依赖 test-xinyang.vercel.app）—— 若生成报 Failed to fetch，说明当前网络访问不了该中转，可改用「阿里云百炼（按量）直连」`
+    ? `当前图片引擎：${img.model}（${mode}${API_BASE ? '，中转 ' + API_BASE : '，未配置中转地址'}）—— 若生成报 Failed to fetch，说明当前网络访问不了该中转，可改用「阿里云百炼（按量）直连」，或在「AI 设置 → 服务端中转接口地址」填入你在阿里云函数计算部署好的中转地址`
     : `当前图片引擎：${img.model}（${mode}）—— 浏览器可直接调用，与阿里云控制台同参数`;
 }
 
@@ -645,6 +601,7 @@ $('aiSettings').onclick = () => {
   $('aiImageKey').value = cfg.imageKey || '';
   setImageModel(cfg.imageModel || '');
   $('aiImageBaseUrl').value = cfg.imageBaseUrl || '';
+  $('aiProxyBase').value = (() => { try { return localStorage.getItem('tripMall.proxyBase') || ''; } catch { return ''; } })();
   // 仅旧默认（空 / 远古 qwen-image）自动升级为 pro；用户明确选的 qwen-image-3.0 常规版保持不变
   if ((cfg.imageProvider === 'dashscope' || cfg.imageProvider === 'qianwen') && ['', 'qwen-image'].includes((cfg.imageModel || '').trim())) {
     setImageModel('qwen-image-3.0-pro');
@@ -752,15 +709,28 @@ $('aiSave').onclick = () => {
     imageModel: imageModelValue(),
     imageBaseUrl: $('aiImageBaseUrl').value.trim()
   };
+  const newProxy = ($('aiProxyBase').value || '').trim().replace(/\/+$/, '');
+  let oldProxy = '';
+  try { oldProxy = (localStorage.getItem('tripMall.proxyBase') || '').trim().replace(/\/+$/, ''); } catch {}
+  cfg.proxyBase = newProxy;
   lsSet(AI_KEY, cfg);
+  try {
+    if (newProxy) localStorage.setItem('tripMall.proxyBase', newProxy);
+    else localStorage.removeItem('tripMall.proxyBase');
+  } catch {}
   updateAIStatus();
   updatePosterEngineLine();
   $('aiModal').hidden = true;
   if (cfg.mode === 'byok' && !cfg.apiKey) alert('已保存，但 API Key 为空——生成时会自动回退到其他方式。');
-  else alert('AI 接入设置已保存。');
+  else if (newProxy && newProxy !== oldProxy) {
+    alert('中转接口已更新。正在刷新页面以生效……');
+    location.reload();
+    return;
+  } else alert('AI 接入设置已保存。');
 };
 $('aiClear').onclick = () => {
   localStorage.removeItem(AI_KEY);
+  try { localStorage.removeItem('tripMall.proxyBase'); } catch {}
   $('aiKey').value = '';
   $('aiModel').value = '';
   $('aiBaseUrl').value = '';
@@ -768,6 +738,7 @@ $('aiClear').onclick = () => {
   $('aiImageKey').value = '';
   setImageModel('');
   $('aiImageBaseUrl').value = '';
+  if ($('aiProxyBase')) $('aiProxyBase').value = '';
   $('aiStatus').textContent = IS_GITHUB_PAGES ? '公网AI：未连接' : '公网AI：未连接';
   alert('已清除自填 Key 设置。');
 };
@@ -1845,7 +1816,24 @@ function knowledgeContext(payload) {
   const live = mp.live || {};
   const liveCats = Array.isArray(live.categories) ? live.categories : [];
   const wantsCompare = /对比|比较|分析|竞品|哪个好|哪家好|品牌推荐|选型|区别|差异|怎么选/.test(String(payload.needs || '') + String(payload.product || '') + String(payload.content_type || ''));
-  const matchedCats = liveCats.filter(c => wantsCompare || !payload.category || c.name === payload.category || c.parent === payload.category);
+  // 商品关键词：把用户输入的产品/需求，命中到实时商品库最相关的三级类目
+  const PRODUCT_KEYWORDS = ['洗漱','香皂','拖鞋','牙膏','牙刷','牙具','浴帽','梳子','剃须','洗发','沐浴','纸巾','一次性','耗品','客房','布草','毛巾','浴巾','床单','被套','枕芯','床垫','枕套','浴袍','吹风机','洗护','小家电','水壶','电话','儿童','宠物','亲子','影音','舒睡','智能','机器人','设备','清洁','除味','香氛','食材','咖啡','食物','饮料','客房打扫','母婴','儿童牙刷','拍摄','摄影','旅拍','影像','图文','视觉','安全','充电','餐厨','厨房','餐饮','食品','装修','建筑','建材','培训','招聘','人才','金融','贷款','软件','系统','康养','运动','农资','园艺','暖通','水电','公区','电器','卫浴','家具','窗帘','灯具','工程'];
+  const userText = String(payload.product || '') + String(payload.needs || '') + String(payload.content_type || '');
+  const catText = c => [c.name, c.parent, ...(c.sub_categories || []), ...(c.brands || []), ...(c.sample_products || [])].join(' ');
+  const scoreCat = c => PRODUCT_KEYWORDS.reduce((s, k) => s + (userText.includes(k) && catText(c).includes(k) ? 1 : 0), 0);
+  const scoredCats = liveCats.map(c => ({ c, s: scoreCat(c) })).sort((a, b) => b.s - a.s);
+  const positiveCats = scoredCats.filter(x => x.s > 0);
+  let chosenCats;
+  if (wantsCompare) {
+    chosenCats = (positiveCats.length ? positiveCats : scoredCats).slice(0, 10).map(x => x.c);
+  } else if (positiveCats.length) {
+    const topScore = positiveCats[0].s;
+    chosenCats = positiveCats.filter(x => x.s >= topScore).slice(0, 3).map(x => x.c);
+    if (!chosenCats.length) chosenCats = positiveCats.slice(0, 3).map(x => x.c);
+  } else {
+    chosenCats = scoredCats.slice(0, 6).map(x => x.c);
+  }
+  const matchedCats = chosenCats;
   const liveCatBlock = matchedCats.length
     ? matchedCats.slice(0, wantsCompare ? 10 : 6).map(c =>
         `· ${c.parent} / ${c.name}（cat=${c.cat}）\n` +
@@ -1861,7 +1849,7 @@ function knowledgeContext(payload) {
   const kwScore = p => {
     let s = 0;
     const hit = t => (p.name || '').includes(t) || (p.cat || '').includes(t) || (p.note || '').includes(t);
-    ['宠物','布草','亲子','影音','舒睡','智能','机器人','耗品','牙具','毛巾','床垫','吹风机','摄影','旅拍','电玩','电竞','咖啡','食材'].forEach(t => { if (kw.includes(t) && hit(t)) s += 3; });
+    PRODUCT_KEYWORDS.forEach(t => { if (kw.includes(t) && hit(t)) s += 3; });
     return s;
   };
   const flagshipBlock = Array.isArray(live.flagship_products)
@@ -1888,6 +1876,21 @@ function knowledgeContext(payload) {
     sections.push(`【服务市场实时商品库（${live.updated_at || '最近抓取'}快照）】
 平台大盘：${stats.suppliers || '—'}家供应商｜年销量${stats.annual_sales_orders || '—'}单｜在售商品${stats.sku_count || '—'}种
 ${liveCatBlock || '（当前分类暂无明细，可参考其他分类）'}`);
+  }
+  // 真实在售商品 + 细分属性（抓取自服务市场商品详情页）：让生成能引用到具体香型/规格/包装/起订量等
+  const detailCats = matchedCats.filter(c => c.real_products || c.detail_attrs);
+  if (detailCats.length) {
+    const realBlock = detailCats.slice(0, 2).map(c => {
+      const attrs = c.detail_attrs || {};
+      const attrLine = Object.entries(attrs)
+        .map(([k, vals]) => `${k}：${(vals || []).slice(0, 8).join('、')}`)
+        .join('；');
+      const prods = (c.real_products || []).slice(0, 8)
+        .map(p => `· ${p.name}｜¥${p.price || ''}｜${p.sale || ''}`)
+        .join('\n');
+      return `【${c.parent || ''}·${c.name} 真实在售与细分属性】\n${attrLine}\n${prods}`;
+    }).join('\n\n');
+    sections.push(realBlock);
   }
   if (flagshipBlock) sections.push(`【服务市场热销/上新好物参考】\n${flagshipBlock}`);
   if (!isProductFocus && couponBlock) sections.push(`【服务市场当前活动券参考】\n${couponBlock}`);
@@ -2601,12 +2604,12 @@ $('aiPosterBtn').onclick = async event => {
     const refHint = (files.length + (selectedKbImage ? 1 : 0)) > 1
       ? '参考图按顺序为图一、图二、图三；用户要求中的「图一/图二/图三」即依次指代这些图，请严格按编号取用对应图片的要素。'
       : '提供的参考图为图一。';
-    prompt = `请以提供的 ${refCount} 张参考图为基础，编辑生成一张成品海报。参考图是唯一的设计基准，必须完整保留、不得重新设计。${refHint}
-1. 完整保留参考图的构图、版式、配色、字体、标题位置、元素、装饰与整体氛围，逐一对齐，不要另起炉灶、不要自由发挥、不要擅自更换色调或改变版式；
-2. 用户明确指定某张图（如"按图一的排版""底图参考图二""logo 用图三"）时，以该张图对应的要素为准；未明确指定的图仅作风格/要素参考；只按下面的用户要求替换/补充内容与文字，未提到的部分保持参考图原样；
+    prompt = `请以提供的 ${refCount} 张参考图作为整体风格与质感的灵感来源，围绕本次内容设计出一张既贴合参考图气质、又像全新作品的海报。${refHint}
+1. 充分吸收参考图的配色、字体气质、构图节奏、装饰风格与整体氛围，作为主要设计语言；但不必逐像素复刻，可根据本次内容的多少与重点，合理调整版式、布局与元素，让成片更完整、更耐看、更有新意；
+2. 用户明确指定某张图（如"按图一的排版""底图参考图二""logo 用图三"）时，以该张图对应的要素为准；未明确指定的图仅作风格/要素参考；只按下面的用户要求替换/补充内容与文字，其余部分在参考风格基础上自然发挥，确保整体协调、不偏离参考图的设计气质；
 3. 画面比例默认与图一（或用户指定的基准图）一致；用户明确要求的方向或比例优先。${lengthLine}
-用户要求：${instruction || '按参考图原样输出，只做清晰化处理'}${assetTextBlock}
-质量要求：中文文字准确、无错别字、无乱码；所有文字完整显示、不超出边缘、不被截断；画面铺满整张图，四周无白边、白框或留白；整体保持参考图的商业海报质感。`;
+用户要求：${instruction || '延续参考图的设计风格，做一张干净、有质感的成品海报'}${assetTextBlock}
+质量要求：中文文字准确、无错别字、无乱码；所有文字完整显示、不超出边缘、不被截断；画面铺满整张图，四周无白边、白框或留白；整体具备商业海报的高质感，观感自然、不生硬。`;
   } else {
     // 无参考图：纯文字生成，保留必要的防乱码/防白边约束
     prompt = `请生成一张${psize.label}${ratioText}的酒店营销海报成品图，输出比例严格为${ratioText}。
