@@ -62,6 +62,10 @@ class H(SimpleHTTPRequestHandler):
                 self.respond(200, app_core.token_plan_video_refs(payload))
             elif path.endswith("/api/token-plan-chat"):
                 self.respond(200, app_core.token_plan_chat(payload))
+            elif path.endswith("/api/token-plan-text-async"):
+                self.respond(200, app_core.token_plan_text_async(payload))
+            elif path.endswith("/api/token-plan-text-task"):
+                self.respond(200, app_core.token_plan_text_task(payload))
             elif path.endswith("/api/token-plan-image"):
                 self.respond(200, app_core.token_plan_image(payload))
             elif path.endswith("/api/token-plan-image-async"):

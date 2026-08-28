@@ -186,6 +186,39 @@ async function openAILikeChat(system, user, { maxTokens = 3000, temperature = 0.
     const messages = [];
     if (system) messages.push({ role: 'system', content: system });
     messages.push({ role: 'user', content: user });
+    // 优先异步（短提交+轮询，绕开同步长连接超时）；异步接口不可用时回退同步
+    let asyncTaskId = '';
+    try {
+      const submitResp = await fetch(apiUrl('/api/token-plan-text-async'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(25000),
+        body: JSON.stringify({ apiKey: cfg.apiKey, model: effModel, messages, max_tokens: maxTokens, temperature })
+      });
+      const submitData = await submitResp.json().catch(() => ({}));
+      if (submitResp.ok && submitData.task_id) {
+        asyncTaskId = submitData.task_id;
+        const started = Date.now();
+        while (Date.now() - started < 600000) {
+          await new Promise(r => setTimeout(r, 4000));
+          const taskResp = await fetch(apiUrl('/api/token-plan-text-task'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            signal: AbortSignal.timeout(25000),
+            body: JSON.stringify({ task_id: asyncTaskId, apiKey: cfg.apiKey })
+          });
+          const taskData = await taskResp.json().catch(() => ({}));
+          if (!taskResp.ok) throw new Error(taskData.error || `任务查询失败（${taskResp.status}）`);
+          const status = String(taskData.task_status || 'RUNNING');
+          if (status === 'SUCCEEDED' && taskData.content) return String(taskData.content);
+          if (status === 'FAILED') throw new Error(taskData.message || '文本任务生成失败');
+        }
+        throw new Error('文本任务超过10分钟未完成，请稍后重试');
+      }
+    } catch (asyncErr) {
+      if (asyncTaskId) throw asyncErr; // 任务已提交，勿重复调用/计费
+      // 异步接口不可用（如模型/套餐不支持异步）时，落到下面走同步
+    }
     const callChat = async () => {
       const res = await fetch(apiUrl('/api/token-plan-chat'), {
         method: 'POST',
@@ -1862,16 +1895,19 @@ ${liveCatBlock || '（当前分类暂无明细，可参考其他分类）'}`);
   const larkDocs = Array.isArray(knowledge.lark_docs) ? knowledge.lark_docs : [];
   if (larkDocs.length) {
     sections.push(`【飞书内容库（自动同步，内容以飞书文档为准，引用时优先采用）】\n${larkDocs.map(d =>
-      `· ${d.name || d.key}（更新于 ${d.updated_at || '—'}）\n${String(d.text).slice(0, 9000)}`).join('\n\n')}`);
+      `· ${d.name || d.key}（更新于 ${d.updated_at || '—'}）\n${String(d.text).slice(0, 3200)}`).join('\n\n')}`);
   }
   const helpDocs = Array.isArray(cat.help_docs) ? cat.help_docs : [];
   if (helpDocs.length) {
     sections.push(`【服务市场官方帮助文档（${catName}，引用时以文档为准）】\n${helpDocs.map(d =>
-      `· ${d.title}：\n${String(d.text).slice(0, 2500)}`).join('\n\n')}`);
+      `· ${d.title}：\n${String(d.text).slice(0, 1100)}`).join('\n\n')}`);
   }
   sections.push(`【当前知识库分类】${catName}：${cat.description || ''}${topics ? '（可参考主题：' + topics + '）' : ''}`);
   if (mp.official_site) sections.push(`【官方来源】${mp.official_site}——涉及平台规则以官方页面为准`);
-  return cleanMarketText(sections.join('\n\n'));
+  // 控制注入知识的总长度：太长会显著拖慢模型、容易触发中转超时
+  let context = cleanMarketText(sections.join('\n\n'));
+  if (context.length > 16000) context = context.slice(0, 16000);
+  return context;
 }
 
 function buildSystemPrompt(payload) {

@@ -73,6 +73,10 @@ def route(environ):
                 return 200, app_core.token_plan_image_task(payload)
             if path.endswith("/api/token-plan-chat"):
                 return 200, app_core.token_plan_chat(payload)
+            if path.endswith("/api/token-plan-text-async"):
+                return 200, app_core.token_plan_text_async(payload)
+            if path.endswith("/api/token-plan-text-task"):
+                return 200, app_core.token_plan_text_task(payload)
             if path.endswith("/api/token-plan-video-create"):
                 return 200, app_core.token_plan_video_create(payload)
             if path.endswith("/api/token-plan-video-get"):

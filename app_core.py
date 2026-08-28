@@ -117,6 +117,66 @@ def token_plan_chat(p):
     return {"content": content}
 
 
+def token_plan_text_async(p):
+    """Token Plan 文本异步提交：立即返回 task_id，绕开同步长连接超时（与图片异步一致）"""
+    api_key = str(p.get("apiKey") or "").strip()
+    if not api_key:
+        raise ValueError("缺少 Token Plan API Key")
+    messages = p.get("messages") or []
+    model = str(p.get("model") or "qwen3.8-max").strip()
+    payload = {
+        "model": model,
+        "input": {"messages": messages},
+        "parameters": {
+            "max_tokens": int(p.get("max_tokens") or 3000),
+            "temperature": float(p.get("temperature") or 0.85),
+        },
+    }
+    resp = _token_plan_call(
+        TOKEN_PLAN_BASE + "/api/v1/services/aigc/text-generation/generation",
+        api_key,
+        payload,
+        timeout=30,
+        headers={"X-DashScope-Async": "enable"},
+    )
+    if resp.status_code != 200:
+        raise RuntimeError(_token_plan_error(resp, "文本"))
+    data = resp.json()
+    out = data.get("output") or {}
+    task_id = out.get("task_id") or data.get("task_id") or ""
+    if not task_id:
+        raise ValueError("Token Plan 文本异步接口未返回 task_id：" + str(data)[:200])
+    return {"task_id": task_id, "task_status": out.get("task_status") or "PENDING"}
+
+
+def token_plan_text_task(p):
+    """Token Plan 文本任务轮询中转：GET /tasks/{task_id}"""
+    api_key = str(p.get("apiKey") or "").strip()
+    task_id = str(p.get("task_id") or "").strip()
+    if not api_key:
+        raise ValueError("缺少 Token Plan API Key")
+    if not task_id:
+        raise ValueError("缺少文本任务 ID")
+    resp = _token_plan_get(TOKEN_PLAN_BASE + "/api/v1/tasks/" + task_id, api_key, timeout=30)
+    if resp.status_code != 200:
+        raise RuntimeError(_token_plan_error(resp, "文本"))
+    data = resp.json()
+    out = data.get("output") or {}
+    task_status = str(out.get("task_status") or data.get("task_status") or "RUNNING").upper()
+    content = ""
+    choices = out.get("choices")
+    if isinstance(choices, list) and choices:
+        msg = choices[0].get("message") or {}
+        content = str(msg.get("content") or choices[0].get("text") or "")
+    if not content:
+        content = str(out.get("text") or "")
+    result = {"task_id": task_id, "task_status": task_status, "content": content}
+    message = out.get("message") or out.get("error") or data.get("message") or ""
+    if message:
+        result["message"] = str(message)[:500]
+    return result
+
+
 def _image_content(p, prompt):
     """从请求里取 1-3 张参考图（references 数组，兼容旧 reference）构造多模态消息内容"""
     content = []
