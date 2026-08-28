@@ -186,35 +186,38 @@ async function openAILikeChat(system, user, { maxTokens = 3000, temperature = 0.
     const messages = [];
     if (system) messages.push({ role: 'system', content: system });
     messages.push({ role: 'user', content: user });
-    let response;
-    try {
-      response = await fetch(apiUrl('/api/token-plan-chat'), {
+    const callChat = async () => {
+      const res = await fetch(apiUrl('/api/token-plan-chat'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          apiKey: cfg.apiKey,
-          model: effModel,
-          messages,
-          max_tokens: maxTokens,
-          temperature
-        })
+        body: JSON.stringify({ apiKey: cfg.apiKey, model: effModel, messages, max_tokens: maxTokens, temperature })
       });
-    } catch (fetchError) {
-      throw new Error(
-        `Token Plan 文本中转连接失败（${fetchError.message || 'Failed to fetch'}）：当前网络访问不了中转域名 ${API_BASE}。建议把文字服务商改回 DeepSeek / 硅基流动 / 百炼按量（浏览器直连、不走中转）；月付套餐请在公司等能访问 vercel.app 的网络下使用。`
-      );
-    }
-    if (!response.ok) {
-      const ct = response.headers.get('content-type') || '';
-      if (ct.includes('application/json')) {
-        const data = await response.json().catch(() => ({}));
-        throw new Error(data.error || `Token Plan 文本中转错误（${response.status}）`);
+      if (!res.ok) {
+        const ct = res.headers.get('content-type') || '';
+        const payload = ct.includes('application/json') ? await res.json().catch(() => ({})) : {};
+        return { error: payload.error || `Token Plan 文本中转错误（${res.status}）` };
       }
-      throw new Error(`Token Plan 文本中转错误（${response.status}，非 JSON 响应，可能被 Vercel 部署保护拦截，需到 vercel.com 关闭 Deployment Protection）`);
+      const data = await res.json();
+      if (data.content) return { content: data.content };
+      return { error: 'Token Plan 返回内容为空' };
+    };
+    let firstError = '';
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const result = await callChat();
+        if (result.content) return result.content;
+        firstError = result.error || 'Token Plan 返回内容为空';
+        // 仅对连接超时类错误再重试一次，其他错误直接返回
+        if (!/timed out|timeout|connect|Failed to fetch|网络/i.test(firstError)) break;
+      } catch (fetchError) {
+        firstError = fetchError.message || 'Failed to fetch';
+      }
     }
-    const data = await response.json();
-    if (data.content) return data.content;
-    throw new Error('Token Plan 返回内容为空');
+    const isLinkIssue = /timed out|timeout|connect|Failed to fetch|网络/i.test(firstError);
+    const hint = isLinkIssue
+      ? '（中转→阿里云连接受限，多为跨境链路临时抖动，已自动重试仍失败，请稍后再试；仍不行可把文字服务商改为 阿里云百炼按量 / DeepSeek / 硅基流动 直连，不依赖中转、更稳定）'
+      : '（请确认中转后端已部署且当前网络能访问 vercel.app；仍不行可把文字服务商改为 阿里云百炼按量 / DeepSeek / 硅基流动 直连）';
+    throw new Error(`Token Plan 文本生成失败：${firstError}${hint}`);
   }
   const base = (cfg.baseUrl || provider.base).replace(/\/+$/, '');
   if (!base) throw new Error('请先在 AI 设置里填写接口地址');
