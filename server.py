@@ -20,7 +20,9 @@ class H(SimpleHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self):
-        if self.path.split("?")[0].endswith("/api/knowledge"):
+        if self.path.split("?")[0].endswith("/api/health"):
+            self.respond(200, {"ok": True, "version": "local-proxy-v1"})
+        elif self.path.split("?")[0].endswith("/api/knowledge"):
             self.respond(200, app_core.knowledge_live())
         else:
             super().do_GET()
@@ -58,6 +60,14 @@ class H(SimpleHTTPRequestHandler):
                 self.respond(200, app_core.token_plan_video_get(payload))
             elif path.endswith("/api/token-plan-video-refs"):
                 self.respond(200, app_core.token_plan_video_refs(payload))
+            elif path.endswith("/api/token-plan-chat"):
+                self.respond(200, app_core.token_plan_chat(payload))
+            elif path.endswith("/api/token-plan-image"):
+                self.respond(200, app_core.token_plan_image(payload))
+            elif path.endswith("/api/token-plan-image-async"):
+                self.respond(200, app_core.token_plan_image_async(payload))
+            elif path.endswith("/api/token-plan-image-task"):
+                self.respond(200, app_core.token_plan_image_task(payload))
             elif path.endswith("/api/lark-sync"):
                 self.respond(200, app_core.lark_sync(payload))
             elif path.endswith("/api/extract"):
