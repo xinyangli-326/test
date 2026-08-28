@@ -88,7 +88,9 @@ def _token_plan_error(resp, label):
 
 
 def token_plan_chat(p):
-    """Token Plan 文本中转：Token Plan 接口未开放浏览器跨域，必须服务端调用"""
+    """Token Plan 文本中转：走原生 text-generation 接口。
+    注意：Vercel 中转能连通 token-plan 的 /api/v1/services/aigc/*（图片就走这里），
+    但连不上 /compatible-mode/*（OpenAI 兼容接口），所以文本必须走原生生成接口。"""
     api_key = str(p.get("apiKey") or "").strip()
     if not api_key:
         raise ValueError("缺少 Token Plan API Key")
@@ -96,22 +98,28 @@ def token_plan_chat(p):
     model = str(p.get("model") or "qwen3.8-max").strip()
     payload = {
         "model": model,
-        "messages": messages,
-        "max_tokens": int(p.get("max_tokens") or 3000),
-        "temperature": float(p.get("temperature") or 0.85),
+        "input": {"messages": messages},
+        "parameters": {
+            "max_tokens": int(p.get("max_tokens") or 3000),
+            "temperature": float(p.get("temperature") or 0.85),
+        },
     }
     resp = _token_plan_call(
-        TOKEN_PLAN_BASE + "/compatible-mode/v1/chat/completions",
+        TOKEN_PLAN_BASE + "/api/v1/services/aigc/text-generation/generation",
         api_key,
         payload,
     )
     if resp.status_code != 200:
         raise RuntimeError(_token_plan_error(resp, "文本"))
     data = resp.json()
+    out = data.get("output") or {}
     content = ""
-    choices = data.get("choices") or []
-    if choices:
-        content = choices[0].get("message", {}).get("content", "") or ""
+    choices = out.get("choices")
+    if isinstance(choices, list) and choices:
+        msg = choices[0].get("message") or {}
+        content = str(msg.get("content") or choices[0].get("text") or "")
+    if not content:
+        content = str(out.get("text") or "")
     if not content:
         raise ValueError("Token Plan 返回内容为空")
     return {"content": content}
