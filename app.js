@@ -1168,7 +1168,7 @@ $('learnGanhuoBtn').onclick = async () => {
     );
     if (points && points.trim()) {
       ganhuoDocs.unshift({ date: Date.now(), source: url ? url : '正文', points: points.trim() });
-      if (ganhuoDocs.length > 50) ganhuoDocs = ganhuoDocs.slice(0, 50);
+      if (ganhuoDocs.length > 2000) ganhuoDocs = ganhuoDocs.slice(0, 2000);
       lsSet(LS.ganhuo, ganhuoDocs);
       renderGanhuo();
       alert('已提炼并存入「干货类知识库」，生成文案选「干货类」即可引用。');
@@ -1957,7 +1957,19 @@ ${liveCatBlock || '（当前分类暂无明细，可参考其他分类）'}`);
   }
   if (ganhuoDocs.length) {
     const ghBlock = ganhuoDocs.slice(0, 12).map(g => `· ${String(g.points || '').slice(0, 500)}`).join('\n');
-    sections.push(`【干货类知识库（写干货类内容时请引用这些要点/观点/方法作为论据，生成时选「干货类」即基于此产出）】\n${ghBlock}`);
+    const styleBlock = ganhuoDocs.slice(0, 6).map(g => {
+      const s = g.style || {};
+      const titles = Array.isArray(s.titles) ? s.titles.join('；') : (s.titles || '');
+      const parts = [];
+      if (titles) parts.push('标题范例：' + titles);
+      if (s.structure) parts.push('结构：' + s.structure);
+      if (s.tone) parts.push('文风：' + s.tone);
+      return parts.length ? '· ' + parts.join(' ｜ ') : '';
+    }).filter(Boolean).join('\n');
+    const styleHint = styleBlock
+      ? `\n\n【程长营公众号风格样本（写干货类标题与正文时请模仿：营销口吻、短句钩子、数字清单/步骤体、真实案例、金句收尾、"建议收藏/转给…"等行动号召）】\n${styleBlock}`
+      : '';
+    sections.push(`【干货类知识库（写干货类内容时请引用这些要点/观点/方法作为论据，生成时选「干货类」即基于此产出）】\n${ghBlock}${styleHint}`);
   }
   if (flagshipBlock && !focusedProduct) sections.push(`【服务市场热销/上新好物参考】\n${flagshipBlock}`);
   if (!isProductFocus && couponBlock) sections.push(`【服务市场当前活动券参考】\n${couponBlock}`);
