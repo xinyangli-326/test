@@ -7,11 +7,11 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<link rel="stylesheet" href="styles.css?v=zbuild57">
+<link rel="stylesheet" href="styles.css?v=zbuild70">
 </head>
 <body>
 <nav id="nav">
-  <img src="assets/trip-mall-logo-transparent.png?v=zbuild57" alt="Trip MALL">
+  <img src="assets/trip-mall-logo-transparent.png?v=zbuild70" alt="Trip MALL">
   <div>
     <a href="#kb">知识库</a>
     <a href="#create">文案生成</a>
@@ -32,7 +32,7 @@
       <a class="alt" href="#video">视频生成</a>
     </div>
   </div>
-  <img class="hero-img" src="assets/trip-mall-logo-transparent.png?v=zbuild57" alt="">
+  <img class="hero-img" src="assets/trip-mall-logo-transparent.png?v=zbuild70" alt="">
 </header>
 
 <div class="ticker" aria-hidden="true"><div class="ticker-track" id="tickerTrack"></div></div>
@@ -111,6 +111,10 @@
         <button id="learnFileBtn" type="button">解析文件</button>
         <input id="learnUrl" type="url" placeholder="粘贴外部链接，如公众号文章、行业报告">
         <button id="learnUrlBtn" type="button">解析链接</button>
+        <button id="learnGanhuoBtn" type="button">学内容→干货库</button>
+        <span class="hint" id="ganhuoCount">干货 0 条</span>
+        <textarea id="learnContent" style="height:70px;font-size:12px" placeholder="也可直接粘贴正文，点右上角「学内容→干货库」自动提炼要点入库"></textarea>
+        <div id="ganhuoList" style="max-height:120px;overflow:auto;font-size:12px;color:#888"></div>
       </div>
       <span class="hint" id="learnCount">已学习 0 份素材</span>
     </div>
@@ -354,7 +358,7 @@
 </main>
 
 <footer>
-  <img src="assets/trip-mall-logo-transparent.png?v=zbuild57" alt="">
+  <img src="assets/trip-mall-logo-transparent.png?v=zbuild70" alt="">
   <span>携程酒店服务市场营销知识库 · AI fallback powered by Puter · V6（2026-08-23）</span>
 </footer>
 
@@ -411,6 +415,9 @@
       <button id="aiModelSuggest" type="button">填入推荐模型（质量更好，按量计费）</button>
       <label>接口地址（自定义服务商时使用）</label>
       <input id="aiBaseUrl" placeholder="https://api.deepseek.com/v1">
+      <label>服务端中转接口地址（月付套餐专用，一般不用改）</label>
+      <input id="aiProxyBase" placeholder="https://你的函数计算域名，如 https://xxx.cn-shanghai.fcapp.run">
+      <p class="hint">当你用「千问AI平台 Token Plan（月付套餐）」时，图片/文案会走这个中转地址，让所有电脑共享一个入口、共用月付套餐额度。默认用网站自带中转 test-xinyang.vercel.app；如果那个中转连不上阿里云（公司 VPN 下通常能访问），就把这里填成你在<b>阿里云函数计算(FC)</b>部署好的中转地址，保存后刷新页面即生效。留空则用默认中转。</p>
     </div>
     <div id="imgFields">
       <hr>
@@ -446,7 +453,7 @@
       <label>图片接口地址（Token Plan 选月付套餐后会自动填，一般不用改）</label>
       <input id="aiImageBaseUrl" placeholder="https://token-plan.cn-beijing.maas.aliyuncs.com">
       <button id="aiImgTest" type="button">测试图片生成</button>
-      <p class="hint">阿里月付套餐（Token Plan）配置：图片服务商选「千问AI平台 Token Plan（月付套餐）」，图片 API Key 填 Token Plan 页面里的专属 Key（sk-sp- 开头，创建时只显示一次），图片接口地址默认自动填 https://token-plan.cn-beijing.maas.aliyuncs.com（域名必须含 token-plan，不能填 dashscope）。重要：Token Plan 接口**未开放浏览器跨域**（官方只给服务端工具用），生图/文字会自动走网站自带的中转接口（test-xinyang.vercel.app）——中转后端需已部署且当前网络能访问；若中转不可达，会提示改用「阿里云百炼」（按量，浏览器可直连）或硅基流动。模型 qwen-image-3.0-pro（旗舰版）和 qwen-image-3.0（常规版，速度更快）套餐内都支持，文生图和参考图改图都可用；若报 403 说明该模型不在你的套餐版本，可换 qwen-image-2.0-pro / wan2.7-image。百炼按量用户则选「阿里云百炼」填 sk- 开头 Key；业务空间专属 Key 需在图片接口地址填 {WorkspaceId}.cn-beijing.maas.aliyuncs.com。</p>
+      <p class="hint">阿里月付套餐（Token Plan）配置：图片服务商选「千问AI平台 Token Plan（月付套餐）」，图片 API Key 填 Token Plan 页面里的专属 Key（sk-sp- 开头，创建时只显示一次），图片接口地址默认自动填 https://token-plan.cn-beijing.maas.aliyuncs.com（域名必须含 token-plan，不能填 dashscope）。重要：Token Plan 接口**未开放浏览器跨域**（官方只给服务端工具用），生图/文字会走服务端中转。默认中转是 site自带 test-xinyang.vercel.app；若它能连通阿里云就无需改动。若中转连不上阿里云（在公司 VPN 下通常能访问，普通外网可能不行），请在最上方「服务端中转接口地址」里填你在<b>阿里云函数计算(FC)</b>部署好的中转域名（见 fc/ 说明），保存并刷新后所有电脑都能共用月付套餐。模型 qwen-image-3.0-pro（旗舰版）和 qwen-image-3.0（常规版，速度更快）套餐内都支持，文生图和参考图改图都可用；若报 403 说明该模型不在你的套餐版本，可换 qwen-image-2.0-pro / wan2.7-image。百炼按量用户则选「阿里云百炼」填 sk- 开头 Key；业务空间专属 Key 需在图片接口地址填 {WorkspaceId}.cn-beijing.maas.aliyuncs.com。</p>
     </div>
     <div class="row">
       <button id="aiTest" type="button">测试连接</button>
@@ -459,8 +466,8 @@
   </div>
 </div>
 
-<script src="vendor/puter.js?v=zbuild57"></script>
-<script src="config.js?v=zbuild57"></script>
-<script src="app.js?v=zbuild57"></script>
+<script src="vendor/puter.js?v=zbuild70"></script>
+<script src="config.js?v=zbuild70"></script>
+<script src="app.js?v=zbuild70"></script>
 </body>
 </html>
