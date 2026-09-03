@@ -1970,7 +1970,7 @@ ${liveCatBlock || '（当前分类暂无明细，可参考其他分类）'}`);
     const styleHint = styleBlock
       ? `\n\n【程长营公众号风格样本（写干货类标题与正文时请模仿：营销口吻、短句钩子、数字清单/步骤体、真实案例、金句收尾、"建议收藏/转给…"等行动号召）】\n${styleBlock}`
       : '';
-    sections.push(`【干货类知识库（写干货类内容时请引用这些要点/观点/方法作为论据，生成时选「干货类」即基于此产出）】\n${ghBlock}${styleHint}`);
+    sections.push(`【干货类知识库（写干货类内容时必须引用这些要点/观点/方法作为论据，并把要点改写成具体步骤、清单、话术或案例细节展开，禁止只概述观点；生成时选「干货类」即基于此产出）】\n${ghBlock}${styleHint}`);
   }
   if (flagshipBlock && !focusedProduct) sections.push(`【服务市场热销/上新好物参考】\n${flagshipBlock}`);
   if (!isProductFocus && couponBlock) sections.push(`【服务市场当前活动券参考】\n${couponBlock}`);
