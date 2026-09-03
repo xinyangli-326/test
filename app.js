@@ -1121,6 +1121,7 @@ const LS = {
   profile: 'tripMall.profile',
   structure: 'tripMall.structure',
   materials: 'tripMall.materials',
+  ganhuo: 'tripMall.ganhuoDocs',
   posterStyle: 'tripMall.posterStyle',
   drafts: 'tripMall.drafts',
   copyHistory: 'tripMall.history.copy',
@@ -1141,6 +1142,39 @@ let materials = lsGet(LS.materials, []);
 let drafts = lsGet(LS.drafts, []);
 let copyHistory = lsGet(LS.copyHistory, []);
 let posterHistory = lsGet(LS.posterHistory, []);
+let ganhuoDocs = lsGet(LS.ganhuo, []);
+
+function renderGanhuo() {
+  if ($('ganhuoCount')) $('ganhuoCount').textContent = `干货 ${ganhuoDocs.length} 条`;
+  if ($('ganhuoList')) $('ganhuoList').innerHTML = ganhuoDocs.length
+    ? ganhuoDocs.slice(0, 12).map(g => `<div>· ${String(g.points || '').replace(/\n/g, '；')}</div>`).join('')
+    : '<div>还没有干货，粘贴链接/正文后点「学内容→干货库」。</div>';
+}
+
+$('learnGanhuoBtn').onclick = async () => {
+  const url = $('learnUrl').value.trim();
+  const txt = ($('learnContent') ? $('learnContent').value : '').trim();
+  let content = '';
+  if (url) {
+    try { const data = await apiRequest('/api/extract', { url }, 30000); content = data.content; }
+    catch (e) { content = txt; }
+  } else { content = txt; }
+  if (!content) return alert('请先粘贴链接或正文。');
+  try {
+    const points = await openAILikeChat(
+      '你是酒店营销知识提炼助手。',
+      `从下面内容提炼“干货要点/知识点/可复用观点”，作为“酒店营销·干货类知识库”。输出要点列表，每条一行、不超过30字，聚焦可复用的方法/洞察/案例/数据：\n${content.slice(0, 12000)}`,
+      { maxTokens: 1200, temperature: 0.4 }
+    );
+    if (points && points.trim()) {
+      ganhuoDocs.unshift({ date: Date.now(), source: url ? url : '正文', points: points.trim() });
+      if (ganhuoDocs.length > 50) ganhuoDocs = ganhuoDocs.slice(0, 50);
+      lsSet(LS.ganhuo, ganhuoDocs);
+      renderGanhuo();
+      alert('已提炼并存入「干货类知识库」，生成文案选「干货类」即可引用。');
+    } else throw new Error('提炼结果为空');
+  } catch (e) { alert('提炼失败：' + e.message); }
+};
 
 function renderLearnList() {
   if ($('learnCount')) $('learnCount').textContent = `已学习 ${materials.length} 份素材`;
@@ -1920,6 +1954,10 @@ ${liveCatBlock || '（当前分类暂无明细，可参考其他分类）'}`);
       return `ID ${p.id}｜[${p.parent || ''}·${p.cat || ''}] ${p.name}｜¥${p.price || ''}${p.sale ? '｜' + p.sale : ''}${params ? '\n  商品参数：' + params : ''}`;
     }).join('\n');
     sections.push(`【匹配商品（写内容请围绕这些商品、以这里的真实数据为准，不要编造品牌/价格/规格）】\n${prodBlock}`);
+  }
+  if (ganhuoDocs.length) {
+    const ghBlock = ganhuoDocs.slice(0, 12).map(g => `· ${String(g.points || '').slice(0, 500)}`).join('\n');
+    sections.push(`【干货类知识库（写干货类内容时请引用这些要点/观点/方法作为论据，生成时选「干货类」即基于此产出）】\n${ghBlock}`);
   }
   if (flagshipBlock && !focusedProduct) sections.push(`【服务市场热销/上新好物参考】\n${flagshipBlock}`);
   if (!isProductFocus && couponBlock) sections.push(`【服务市场当前活动券参考】\n${couponBlock}`);
