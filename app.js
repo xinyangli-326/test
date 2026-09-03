@@ -2023,15 +2023,38 @@ ${liveCatBlock || '（当前分类暂无明细，可参考其他分类）'}`);
   return context;
 }
 
+let fullProdLoaded = false;
+let fullProdIndex = null;
+
+async function ensureFullProductIndex() {
+  if (fullProdLoaded) return true;
+  try {
+    const r = await fetch('products_full.json', { cache: 'force-cache' });
+    if (!r.ok) return false;
+    fullProdIndex = await r.json();
+    fullProdLoaded = true;
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+function lookupProductRec(pidx, id) {
+  return pidx[id] || (fullProdLoaded && fullProdIndex ? fullProdIndex[id] : null);
+}
+
 function matchedProductInfo(payload) {
   const windowIdx = (typeof window !== 'undefined' && window.PRODUCT_INDEX) || null;
   const mp = (typeof knowledge !== 'undefined' && knowledge.marketplace) || {};
   const pidx = windowIdx || mp.product_index || {};
   const idText = String(payload.product || '') + ' ' + String(payload.needs || '') + ' ' + String(payload.content_type || '');
   const ids = new Set();
-  (idText.match(/id\s*(\d+)/gi) || []).forEach(m => { const v = String(m).replace(/\D/g, ''); if (pidx[v]) ids.add(v); });
-  (idText.match(/\b(\d{4,6})\b/g) || []).forEach(v => { if (pidx[v]) ids.add(v); });
-  return [...ids].map(id => pidx[id]).slice(0, 3);
+  const add = v => { if (lookupProductRec(pidx, v)) ids.add(v); };
+  (idText.match(/id\s*(\d+)/gi) || []).forEach(m => add(String(m).replace(/\D/g, '')));
+  (idText.match(/\b(\d{4,6})\b/g) || []).forEach(v => add(v));
+  return [...ids].map(id =>
+    (fullProdLoaded && fullProdIndex && fullProdIndex[id]) || pidx[id] || null
+  ).filter(Boolean).slice(0, 3);
 }
 
 function buildFocusedSystem(payload) {
@@ -2039,15 +2062,27 @@ function buildFocusedSystem(payload) {
   if (!prods.length) return null;
   const prodBlock = prods.map(p => {
     const params = p.params ? Object.entries(p.params).map(([k, v]) => `${k}：${v}`).join('；') : '';
-    return `- 【商品】${p.name}（ID ${p.id}，${p.parent || ''}·${p.cat || ''}）\n` +
-      `  价格参考：¥${p.price || ''}${p.sale ? '；' + p.sale : ''}\n` +
+    const skuLine = Array.isArray(p.skus) && p.skus.length
+      ? `  可选规格（真实SKU，含价格/起订量）：${p.skus.map(s =>
+          `${s.name || ''}¥${s.price || ''}${s.minQty ? '/起订' + s.minQty : ''}${s.salesTag ? '(' + s.salesTag + ')' : ''}${s.props && s.props.length ? '；属性：' + s.props.join('、') : ''}`
+        ).slice(0, 5).join(' ｜ ')}\n`
+      : '';
+    const cmtLine = Array.isArray(p.comments) && p.comments.length
+      ? `  用户评价摘录：${p.comments.map(c => (c.star ? c.star + '星 ' : '') + c.text).join(' ｜ ')}\n`
+      : '';
+    return `- 【商品】${p.name}（ID ${p.id}，${p.parent || p.type || ''}${p.cat ? '·' + p.cat : ''}）\n` +
+      `  价格参考：¥${p.price || ''}${p.unit ? '/' + p.unit : ''}${p.sale || p.sales ? '；销量' + (p.sale || p.sales || '') : ''}\n` +
+      (p.supplier ? `  供应/品牌：${p.supplier}\n` : '') +
+      (p.subtitle && !/^id\s*\d+/i.test(String(p.subtitle)) ? `  副标题：${p.subtitle}\n` : '') +
+      (p.summary ? `  核心卖点（可改写引用，勿照抄）：${String(p.summary).slice(0, 1000)}\n` : '') +
+      skuLine + cmtLine +
       (params ? `  真实参数：${params}\n` : '');
   }).join('\n');
   return `你是携程酒店服务市场（TripMALL）的资深内容运营，为酒店写真实、生动、可直接发布的中文内容。
 平台立场：服务市场是面向酒店客户的一站式采购平台，内容站在平台/商家角度，讲清产品为酒店创造的价值、为什么在服务市场采购更省心省力省钱；不要写成酒店对住客的自我宣传（除非用户明确要酒店视角）。
 本次要宣传的商品（必须围绕以下真实信息写，严禁编造品牌/价格/规格/克重/起订量）：
 ${prodBlock}
-写作要求：开头用钩子戳酒店采购/店长/老板的痛点 → 场景化描述 → 给出解法 → **正面引用上面商品给出的真实价格/克重/起订量/适用档次**（价格可写“参考价”，并注明“以服务市场页面为准”）→ 点出平台保障（免房置换抵采购额度、低价保证、送货到店、快速开票、先行赔付）→ 结尾给明确行动（去服务市场下单/私信领方案）。不夸大、不绝对化、不用“放心/低价/售后退货/纠纷”等掉价字眼。按所选渠道格式输出：公众号=抓眼球标题+导语+分段正文+CTA；朋友圈=3条各150-250字；小红书=标题+正文+话题标签。`;
+写作要求：**把上面“核心卖点/规格SKU/起订量/适用属性”具体化写进正文**——比如写清尺寸、容量、材质、每箱数量、起订门槛、适用酒店档次或房型，并结合商品使用场景（入住体验、清洁效率、客房布置、节能降耗等）展开，禁止写成“高品质、好口碑”这类任何产品都能套的空话；价格写“参考价”，注明“以服务市场页面为准”。→ 点出平台支撑点到即止（免房置换/集采/送货到店等可作为采购理由）→ 结尾给明确行动（去服务市场下单/私信领方案）。不夸大、不绝对化、不用“放心/低价/售后退货/纠纷”等掉价字眼。按所选渠道格式输出：公众号=抓眼球标题+导语+分段正文+CTA；朋友圈=3条各150-250字；小红书=标题+正文+话题标签。`;
 }
 
 function buildSystemPrompt(payload) {
@@ -2121,6 +2156,13 @@ $('generate').onclick = async event => {
   };
   const deepThink = $('deepThink').checked;
   try {
+    const needFull = payload.category === 'product' ||
+      /(^|[\s,，、])(id\s*)?\d{4,7}($|[\s,，、])|id\s*\d{4,7}/i.test(String(payload.product || ''));
+    if (needFull) {
+      button.textContent = '载入商品详情库…';
+      await ensureFullProductIndex();
+      button.textContent = 'AI生成中…';
+    }
     let content;
     if (hasByok()) {
       content = await openAILikeChat(
