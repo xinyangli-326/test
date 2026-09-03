@@ -840,7 +840,7 @@ const LOCAL_CATEGORIES = {
   platform: { name: '平台类知识库', description: '服务市场平台本身：入口与账号、下单流程、售后申请，让酒店客户会用、敢买。', content_types: ['功能科普','操作指南','问题解答','平台好物','旅拍合作','内容互动'], topics: ['下单流程','订单查询','售后申请','酒店用品推荐','旅拍合作'] },
   payment: { name: '支付类知识库', description: '服务市场内的支付与结算：对公支付、账单分期、免房置换、退款发票，帮助酒店客户顺利成交。', content_types: ['支付科普','付款指南','退款指南','免房置换','账单分期','风险提示'], topics: ['现金支付','对公转账','退款路径','免房置换','账单分期'] },
   campaign: { name: '活动类知识库', description: '服务市场平台活动（双11、618、酒店采购节等）：借活动节点推动酒店客户在服务市场下单。', content_types: ['优惠福利','活动预热','倒计时','爆品推荐','限时促单','活动复盘'], topics: ['双11','618','酒店采购节','开业季','暑期亲子季'] },
-  insight: { name: '干货类知识库', description: '酒店运营干货与行业洞察：用专业内容建立信任，最终把酒店客户引导到服务市场获取解决方案。', content_types: ['专业知识','运营清单','案例拆解','避坑指南','数据洞察','内容互动'], topics: ['酒店好评差评','酒店采购清单','前台常见问题','OTA运营','投诉处理'] }
+  insight: { name: '干货类知识库', description: '纯引流干货：酒店运营知识、常见问题与解决对策、服务改善方法与行业经验；面向酒店从业者输出实用内容，不做商品导购。', content_types: ['专业知识','运营清单','案例拆解','避坑指南','数据洞察','内容互动'], topics: ['酒店好评差评','前台常见问题','客房服务与管理','投诉处理','OTA运营','收益管理','员工服务培训'] }
 };
 const PERSONAS = ['酒店老板','店长','业主','总经理','收益总监','市场营销总监','酒店营销人员','酒店采购','酒店经理','销售总监','前厅经理','客房经理','财务总监','工程总监','品牌总监','投资人','酒店顾问','酒店供应商','一线销售','住客','宠物主','亲子家庭'];
 
@@ -1808,6 +1808,11 @@ const KNOWLEDGE_STANCE = `平台立场（最高优先级，必须严格遵守）
 涉及平台规则与官方表述，以携程酒店商家管理后台官网（ebooking.ctrip.com/hmall/index）
 及服务市场官方页面为准，不要凭空编造；联网搜索结果仅作事实与趋势参考，不要照搬其表述视角。`;
 
+const INSIGHT_STANCE = `内容定位（最高优先级，必须严格遵守）：本任务只输出「纯引流干货」——面向酒店经营者的运营知识、常见问题、服务改善方法与解决对策。
+禁止出现：服务市场、在售商品、主题房/舒睡房等改造方案、价格、采购、优惠券、免房置换、下单或去服务市场等任何导购内容；不要写成平台广告。
+写法：站在资深酒店从业者/行业编辑的角度，用程长营公众号的营销口吻输出干货（短句钩子、数字清单/步骤体、真实做法与话术、金句收尾）。
+结尾如需引导，只引导“收藏/转发/关注账号持续学习”，不引导购买。`;
+
 const PRODUCT_BRIEF = `服务市场在售产品速览（写内容时可引用）：客房用品、酒店布草、酒店设施、智能化、
 视觉设计、特色服务等品类上千个SKU；主题房改造（亲子房、宠物友好房、影音房、舒睡房等）
 是设计+物资配置+运营营销的一站式方案，酒店可按需选择、一站配齐（具体价格以服务市场页面为准）。`;
@@ -1836,7 +1841,32 @@ function platformSupportForProduct(text) {
   return cleanMarketText(joined) || '免房置换、一站式集采、灵活结算等平台优势（具体以服务市场页面为准）';
 }
 
+function pureInsightContext() {
+  const cat = knowledge.categories?.insight || {};
+  const blocks = [];
+  if (ganhuoDocs.length) {
+    const ghBlock = ganhuoDocs.slice(0, 30).map(g => `· ${String(g.points || '').slice(0, 600)}`).join('\n');
+    const styleBlock = ganhuoDocs.slice(0, 8).map(g => {
+      const s = g.style || {};
+      const titles = Array.isArray(s.titles) ? s.titles.join('；') : (s.titles || '');
+      const parts = [];
+      if (titles) parts.push('标题范例：' + titles);
+      if (s.structure) parts.push('结构：' + s.structure);
+      if (s.tone) parts.push('文风：' + s.tone);
+      return parts.length ? '· ' + parts.join(' ｜ ') : '';
+    }).filter(Boolean).join('\n');
+    blocks.push(`【纯引流干货知识库（定位：只讲酒店运营知识/常见问题/服务改善/解决对策；必须把下面的要点改写成具体步骤、清单、话术或案例细节展开，禁止只概述观点；禁止出现任何商品、主题房改造、价格、采购、优惠券或引导去服务市场下单的内容）】\n${ghBlock}`);
+    if (styleBlock) blocks.push(`【程长营公众号风格样本（标题与行文请模仿：营销口吻、短句钩子、数字清单/步骤体、真实案例、金句收尾、"建议收藏/转给…"等行动号召）】\n${styleBlock}`);
+  }
+  const topics = Array.isArray(cat.topics) ? cat.topics.join('、') : '';
+  blocks.push(`【内容定位】纯引流运营干货：${cat.description || ''}${topics ? '（选题方向：' + topics + '）' : ''}`);
+  let context = cleanMarketText(blocks.join('\n\n'));
+  if (context.length > 16000) context = context.slice(0, 16000);
+  return context;
+}
+
 function knowledgeContext(payload) {
+  if (payload.category === 'insight') return pureInsightContext();
   const cat = knowledge.categories?.[payload.category] || {};
   const mp = knowledge.marketplace || {};
   const catName = cat.name || payload.category || '';
@@ -2021,6 +2051,9 @@ ${prodBlock}
 }
 
 function buildSystemPrompt(payload) {
+  if (payload.category === 'insight') {
+    return `你是携程酒店程长营的资深干货内容编辑，为酒店从业者写真实、专业、可直接发布的运营干货。\n\n${INSIGHT_STANCE}\n\n${knowledgeContext(payload)}`;
+  }
   const focused = buildFocusedSystem(payload);
   if (focused) return focused;
   return `你是携程酒店服务市场（Hmall）的资深内容运营，为酒店写真实、生动、可直接发布的中文内容。\n\n${KNOWLEDGE_STANCE}\n\n${knowledgeContext(payload)}`;
@@ -2059,7 +2092,8 @@ ${wantsCompare ? `6. 本任务需要品牌对比/分析：必须从【服务市�
 7. 涉及具体价格、销量、优惠券时，标注“参考价/参考销量”，并提示以服务市场页面为准。
 8. 效果类表述只做定性：提到“点评提升”“房价提升”“入住率提升”等效果时，写“助力点评提升”“带动房价提升”这类定性表达，不要给出具体百分比或数字；其余价格、销量等数字可用，但注明“参考值/参考销量”。
 9. 不夸大、不过度承诺：禁止“一定”“保证”“100%”“立竿见影”“稳赚不赔”“从此无忧”等绝对化、夸张措辞；不写无法证实的承诺。
-10. 不使用“放心”“低价”“售后”“退换货”“退货”“纠纷”“防纠纷”“维权”等平台套话或掉价措辞，改用具体、实在、可感知的表达（免房置换、一站式集采等可正常使用）。`;
+10. 不使用“放心”“低价”“售后”“退换货”“退货”“纠纷”“防纠纷”“维权”等平台套话或掉价措辞，改用具体、实在、可感知的表达（免房置换、一站式集采等可正常使用）。
+${payload.category === 'insight' ? `\n11. 纯引流干货定位（干货类最高要求）：本篇是给酒店从业者看的运营干货，不是商品广告。全程禁止出现“服务市场、主题房/舒睡房等改造方案、商品推荐、价格、采购、优惠券、免房置换、下单引导”等任何导购内容；结尾如要引导，只引导收藏/转发/关注账号持续学习。` : ''}`;
 }
 
 function buildGeneratePrompt(payload) {
