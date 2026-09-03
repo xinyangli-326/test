@@ -1937,7 +1937,7 @@ function knowledgeContext(payload) {
         .filter(p => wantsRecommendation || wantsCompare || isBroadCat || !p.cat || p.cat === payload.category || p.cat.includes(payload.category))
         .sort((a, b) => kwScore(b) - kwScore(a))
         .slice(0, (wantsRecommendation || wantsCompare) ? 24 : 12)
-        .map(p => `· ${p.name}｜${p.cat || ''}｜${p.price}｜${p.sales || ''}${p.rating ? '｜' + p.rating : ''}${p.coupon ? '｜' + p.coupon : ''}${p.note ? '｜' + p.note : ''}`)
+        .map(p => `· ${p.name}｜${p.cat || ''}｜${p.price}${p.rating ? '｜' + p.rating : ''}${p.coupon ? '｜' + p.coupon : ''}${p.note ? '｜' + p.note : ''}`)
         .join('\n')
     : '';
   const couponBlock = Array.isArray(live.key_coupons)
@@ -1966,7 +1966,7 @@ ${liveCatBlock || '（当前分类暂无明细，可参考其他分类）'}`);
         .map(([k, vals]) => `${k}：${(vals || []).slice(0, 8).join('、')}`)
         .join('；');
       const prods = (c.real_products || []).slice(0, 8)
-        .map(p => `· ${p.name}｜¥${p.price || ''}｜${p.sale || ''}`)
+        .map(p => `· ${p.name}｜¥${p.price || ''}`)
         .join('\n');
       return `【${c.parent || ''}·${c.name} 真实在售与细分属性】\n${attrLine}\n${prods}`;
     }).join('\n\n');
@@ -1982,7 +1982,7 @@ ${liveCatBlock || '（当前分类暂无明细，可参考其他分类）'}`);
   if (matchedProducts.length) {
     const prodBlock = matchedProducts.map(p => {
       const params = p.params ? Object.entries(p.params).map(([k, v]) => `${k} ${v}`).join('、') : '';
-      return `ID ${p.id}｜[${p.parent || ''}·${p.cat || ''}] ${p.name}｜¥${p.price || ''}${p.sale ? '｜' + p.sale : ''}${params ? '\n  商品参数：' + params : ''}`;
+      return `ID ${p.id}｜[${p.parent || ''}·${p.cat || ''}] ${p.name}｜¥${p.price || ''}${params ? '\n  商品参数：' + params : ''}`;
     }).join('\n');
     sections.push(`【匹配商品（写内容请围绕这些商品、以这里的真实数据为准，不要编造品牌/价格/规格）】\n${prodBlock}`);
   }
@@ -2064,14 +2064,14 @@ function buildFocusedSystem(payload) {
     const params = p.params ? Object.entries(p.params).map(([k, v]) => `${k}：${v}`).join('；') : '';
     const skuLine = Array.isArray(p.skus) && p.skus.length
       ? `  可选规格（真实SKU，含价格/起订量）：${p.skus.map(s =>
-          `${s.name || ''}¥${s.price || ''}${s.minQty ? '/起订' + s.minQty : ''}${s.salesTag ? '(' + s.salesTag + ')' : ''}${s.props && s.props.length ? '；属性：' + s.props.join('、') : ''}`
+          `${s.name || ''}¥${s.price || ''}${s.minQty ? '/起订' + s.minQty : ''}${s.props && s.props.length ? '；属性：' + s.props.join('、') : ''}`
         ).slice(0, 5).join(' ｜ ')}\n`
       : '';
     const cmtLine = Array.isArray(p.comments) && p.comments.length
       ? `  用户评价摘录：${p.comments.map(c => (c.star ? c.star + '星 ' : '') + c.text).join(' ｜ ')}\n`
       : '';
     return `- 【商品】${p.name}（${p.parent || p.type || ''}${p.cat ? '·' + p.cat : ''}）\n` +
-      `  价格参考：¥${p.price || ''}${p.unit ? '/' + p.unit : ''}${p.sale || p.sales ? '；销量' + (p.sale || p.sales || '') : ''}\n` +
+      `  价格参考：¥${p.price || ''}${p.unit ? '/' + p.unit : ''}\n` +
       (p.supplier ? `  供应/品牌：${p.supplier}\n` : '') +
       (p.subtitle && !/^id\s*\d+/i.test(String(p.subtitle)) ? `  副标题：${p.subtitle}\n` : '') +
       (p.summary ? `  核心卖点（可改写引用，勿照抄）：${String(p.summary).slice(0, 1000)}\n` : '') +
@@ -2084,6 +2084,7 @@ function buildFocusedSystem(payload) {
 ${prodBlock}
 写作要求：**把上面“核心卖点/规格SKU/起订量/适用属性”具体化写进正文**——比如写清尺寸、容量、材质、每箱数量、起订门槛、适用酒店档次或房型，并结合商品使用场景（入住体验、清洁效率、客房布置、节能降耗等）展开，禁止写成“高品质、好口碑”这类任何产品都能套的空话；价格写“参考价”，注明“以服务市场页面为准”。
 **禁止输出商品ID**：标题与正文一律不得出现任何数字编号（如 1556、id1556）或“搜索ID”之类表述；需要指代商品时，必须使用它的完整真实名称与品牌（如“红杉树 60*40支全棉加密条纹床单”），并至少在标题或导语点明真实商品名/品牌，让读者明确知道写的是哪一款。
+**禁止销量类表述**：全程不得出现“销量、已售N件、热卖/爆卖N件、参考销量”等销量信息（可用的事实只有：品牌、材质、规格尺寸、包装/箱规、起订量、价格、定制与适用场景）。
 → 点出平台支撑点到即止（免房置换/集采/送货到店等可作为采购理由）→ 结尾给明确行动（去服务市场下单/私信领方案）。不夸大、不绝对化、不用“放心/低价/售后退货/纠纷”等掉价字眼。按所选渠道格式输出：公众号=抓眼球标题+导语+分段正文+CTA；朋友圈=3条各150-250字；小红书=标题+正文+话题标签。`;
 }
 
@@ -2125,9 +2126,9 @@ ${wordRequirement}
 3. 站在服务市场/商家面向酒店客户的角度展开（除非用户明确要求酒店视角）。
 4. 若用户给出已有文案或细节要求（调整细节、强调IP、强调功能、强调价格），先理解原意再改写，不丢失关键信息。
 5. 内部数字写成参考值，不编造平台规则；避免“值得注意的是”“综上所述”“在这个…的时代”等AI腔。
-${wantsCompare ? `6. 本任务需要品牌对比/分析：必须从【服务市场实时商品库】与【热销/上新好物参考】中引用真实在售品牌与商品名（如红杉树、尊客、恒创、悦诗兰庭、洁柔、小帅、奶龙、B.Duck、梦百合等），逐品牌说明定位、代表商品、价格区间、销量/好评与适用酒店场景；禁止用“某品牌”“部分品牌”“一些品牌”等含糊表述代替具体品牌名。若知识库中某品类缺少品牌数据，如实说明“该品类暂无明确品牌数据”，不得编造。` : ''}
-7. 涉及具体价格、销量、优惠券时，标注“参考价/参考销量”，并提示以服务市场页面为准。
-8. 效果类表述只做定性：提到“点评提升”“房价提升”“入住率提升”等效果时，写“助力点评提升”“带动房价提升”这类定性表达，不要给出具体百分比或数字；其余价格、销量等数字可用，但注明“参考值/参考销量”。
+${wantsCompare ? `6. 本任务需要品牌对比/分析：必须从【服务市场实时商品库】与【热销/上新好物参考】中引用真实在售品牌与商品名（如红杉树、尊客、恒创、悦诗兰庭、洁柔、小帅、奶龙、B.Duck、梦百合等），逐品牌说明定位、代表商品、价格区间与适用酒店场景；禁止用“某品牌”“部分品牌”“一些品牌”等含糊表述代替具体品牌名，全程不得出现销量类信息。若知识库中某品类缺少品牌数据，如实说明“该品类暂无明确品牌数据”，不得编造。` : ''}
+7. 涉及具体价格、优惠券时，标注“参考价”，并提示以服务市场页面为准；全程不得出现“销量/已售/热卖N件”等销量信息。
+8. 效果类表述只做定性：提到“点评提升”“房价提升”“入住率提升”等效果时，写“助力点评提升”“带动房价提升”这类定性表达，不要给出具体百分比或数字；其余价格、规格等事实数字可用，但注明“参考价”。
 9. 不夸大、不过度承诺：禁止“一定”“保证”“100%”“立竿见影”“稳赚不赔”“从此无忧”等绝对化、夸张措辞；不写无法证实的承诺。
 10. 不使用“放心”“低价”“售后”“退换货”“退货”“纠纷”“防纠纷”“维权”等平台套话或掉价措辞，改用具体、实在、可感知的表达（免房置换、一站式集采等可正常使用）。
 ${payload.category === 'insight' ? `\n11. 纯引流干货定位（干货类最高要求）：本篇是给酒店从业者看的运营干货，不是商品广告。全程禁止出现“服务市场、主题房/舒睡房等改造方案、商品推荐、价格、采购、优惠券、免房置换、下单引导”等任何导购内容；正文禁止出现“程长营”或任何具体账号/机构名称；结尾如要引导，只引导收藏/转发/关注账号持续学习。` : ''}`;
