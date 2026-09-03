@@ -1718,6 +1718,7 @@ $('structureBox').value = lsGet(LS.structure, '');
 $('structureBox').oninput = () => { lsSet(LS.structure, $('structureBox').value); };
 $('samples').oninput = () => { profileDirty = true; };
 renderLearnList();
+renderGanhuo();
 
 /* ============================ 联网研究 ============================ */
 
