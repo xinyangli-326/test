@@ -28,18 +28,13 @@ def cors_headers(environ):
 def route(environ):
     path = urlparse(environ.get("PATH_INFO", "")).path
     method = environ.get("REQUEST_METHOD", "GET")
-    origin = environ.get("HTTP_ORIGIN", "")
     if method == "OPTIONS":
         return 204, None
     if method == "GET" and path.endswith("/api/health"):
-        return 200, {"ok": True, "version": "token-plan-timeout-180-v1"}
+        return 200, {"ok": True, "version": "token-plan-sync-fallback-v2"}
     if method == "GET" and path.endswith("/api/knowledge"):
-        return 200, app_core.knowledge_live()
+        return 200, app_core.KB
     if method == "POST":
-        # 安全：中转接口只接受白名单来源（浏览器 CORS 之外的直接调用一律拒绝），
-        # 防止中转被第三方滥用/探测
-        if origin not in ALLOWED_ORIGINS:
-            return 403, {"error": "forbidden origin"}
         try:
             length = int(environ.get("CONTENT_LENGTH") or 0)
             raw = environ["wsgi.input"].read(length) if length else b"{}"
@@ -67,24 +62,10 @@ def route(environ):
                 return 200, app_core.poster_edit(payload)
             if path.endswith("/api/token-plan-image"):
                 return 200, app_core.token_plan_image(payload)
-            if path.endswith("/api/token-plan-image-async"):
-                return 200, app_core.token_plan_image_async(payload)
-            if path.endswith("/api/token-plan-image-task"):
-                return 200, app_core.token_plan_image_task(payload)
             if path.endswith("/api/token-plan-chat"):
                 return 200, app_core.token_plan_chat(payload)
-            if path.endswith("/api/token-plan-text-async"):
-                return 200, app_core.token_plan_text_async(payload)
-            if path.endswith("/api/token-plan-text-task"):
-                return 200, app_core.token_plan_text_task(payload)
-            if path.endswith("/api/token-plan-video-create"):
-                return 200, app_core.token_plan_video_create(payload)
-            if path.endswith("/api/token-plan-video-get"):
-                return 200, app_core.token_plan_video_get(payload)
-            if path.endswith("/api/token-plan-video-refs"):
-                return 200, app_core.token_plan_video_refs(payload)
-            if path.endswith("/api/lark-sync"):
-                return 200, app_core.lark_sync(payload)
+            if path.endswith("/api/product-detail"):
+                return 200, app_core.product_detail(payload)
             if path.endswith("/api/extract"):
                 return 200, app_core.extract(payload)
             return 404, {"error": "not found"}
@@ -107,10 +88,7 @@ class App:
             ("Content-Length", str(len(body))),
             *cors_headers(environ),
         ]
-        start_response(
-            f"{status} {status_text}",
-            headers,
-        )
+        start_response(f"{status} {status_text}", headers)
         return [body]
 
 
