@@ -887,9 +887,14 @@ function renderKbPosterImages() {
   box.querySelectorAll('.kb-img').forEach(btn => {
     btn.onclick = () => {
       const img = images[+btn.dataset.i];
-      selectedKbImage = selectedKbImage === img.file ? '' : img.file;
+      const isRemoving = selectedKbImage === img.file;
+      if (!isRemoving && posterReferenceFiles.length >= 3) {
+        alert('当前已添加3张参考图，请先删除一张再选择知识库配图。');
+        return;
+      }
+      selectedKbImage = isRemoving ? '' : img.file;
       renderKbPosterImages();
-      $('aiPosterStatus').textContent = selectedKbImage ? `已选知识库配图作为参考：${img.doc}（可再点取消）` : '';
+      updatePosterReferenceStatus();
     };
   });
 }
@@ -2698,6 +2703,8 @@ function parseInstructionSize(text) {
 
 /* 按历史实际生成耗时动态预估进度条时长：第二次起进度条与实际等待时间基本同步 */
 const imageGenDurations = [];
+let posterReferenceFiles = [];
+let posterReferencePreviewUrls = [];
 
 function estimateImageDuration() {
   if (!imageGenDurations.length) return 50000;
@@ -2714,21 +2721,61 @@ function recordImageDuration(ms) {
    避免上一次的参考图"残留记忆"影响下一次生成 */
 function clearPosterRefs() {
   selectedKbImage = '';
+  posterReferenceFiles = [];
   const ref = $('aiPosterRef');
   if (ref) ref.value = '';
+  renderPosterReferenceFiles();
   const grid = $('kbPosterImgs');
   if (grid) grid.querySelectorAll('.kb-img.on').forEach(el => el.classList.remove('on'));
 }
 
-/* 选好参考图后立即提示，避免"以为传了参考图其实没挂上" */
+function renderPosterReferenceFiles() {
+  posterReferencePreviewUrls.forEach(url => URL.revokeObjectURL(url));
+  posterReferencePreviewUrls = [];
+  const list = $('aiPosterRefList');
+  if (!list) return;
+  list.innerHTML = posterReferenceFiles.map((file, index) => {
+    const previewUrl = URL.createObjectURL(file);
+    posterReferencePreviewUrls.push(previewUrl);
+    return `<div class="ref-thumb" title="${escapeHtml(file.name)}">
+      <img src="${previewUrl}" alt="图${['一','二','三'][index] || index + 1}">
+      <span>图${['一','二','三'][index] || index + 1} · ${escapeHtml(file.name)}</span>
+      <button type="button" data-remove-poster-ref="${index}" title="删除这张参考图">✕</button>
+    </div>`;
+  }).join('');
+  list.querySelectorAll('[data-remove-poster-ref]').forEach(button => {
+    button.onclick = () => {
+      posterReferenceFiles.splice(+button.dataset.removePosterRef, 1);
+      renderPosterReferenceFiles();
+      updatePosterReferenceStatus();
+    };
+  });
+}
+
+function updatePosterReferenceStatus() {
+  const status = $('aiPosterStatus');
+  if (!status) return;
+  const names = posterReferenceFiles.map((file, index) => `图${['一','二','三'][index] || index + 1}=${file.name}`);
+  if (selectedKbImage && posterReferenceFiles.length < 3) names.push(`图${['一','二','三'][names.length] || names.length + 1}=知识库配图`);
+  status.textContent = names.length
+    ? `已添加 ${names.length} 张参考图：${names.join('，')}（还可继续逐张添加或删除）`
+    : '';
+}
+
+/* 每次选择一张并追加，避免系统文件选择器里多选操作困难 */
 const aiPosterRefInput = $('aiPosterRef');
 if (aiPosterRefInput) {
   aiPosterRefInput.addEventListener('change', () => {
-    const files = Array.from(aiPosterRefInput.files || []).slice(0, 3);
-    const status = $('aiPosterStatus');
-    if (status) status.textContent = files.length
-      ? `已选择 ${files.length} 张参考图：${files.map((f, i) => `图${['一','二','三'][i] || i + 1}=${f.name}`).join('，')}（指令里可用「图一/图二/图三」分别引用）`
-      : '';
+    const file = aiPosterRefInput.files?.[0];
+    aiPosterRefInput.value = '';
+    if (!file) return;
+    if (posterReferenceFiles.length >= 3) {
+      alert('最多添加3张参考图，请先删除一张再继续添加。');
+      return;
+    }
+    posterReferenceFiles.push(file);
+    renderPosterReferenceFiles();
+    updatePosterReferenceStatus();
   });
 }
 
@@ -2736,7 +2783,7 @@ $('aiPosterBtn').onclick = async event => {
   const button = event.currentTarget;
   const t0 = Date.now();
   const progress = startProgress('aiPosterProgress', estimateImageDuration());
-  const files = Array.from($('aiPosterRef').files || []).slice(0, 3);
+  const files = posterReferenceFiles.slice(0, 3);
   const cmd = $('aiPosterCmd').value.trim();
   const extraText = $('aiPosterText').value.trim();
   // 海报只使用海报区自己的输入（指令/补充文字/参考图），无风格下拉、无任何自动注入。
@@ -2788,8 +2835,8 @@ $('aiPosterBtn').onclick = async event => {
     const lengthLine = extraText.length > 60
       ? '若文字较多，海报整体可沿参考图风格纵向自然延伸拉长，确保所有文字完整放下，延伸后仍是同一套版式与视觉语言。'
       : '';
-    const refCount = files.length + (selectedKbImage ? 1 : 0);
-    const refHint = (files.length + (selectedKbImage ? 1 : 0)) > 1
+    const refCount = Math.min(3, files.length + (selectedKbImage ? 1 : 0));
+    const refHint = refCount > 1
       ? '参考图按顺序为图一、图二、图三；用户要求中的「图一/图二/图三」即依次指代这些图，请严格按编号取用对应图片的要素。'
       : '提供的参考图为图一。';
     prompt = `请以提供的 ${refCount} 张参考图作为整体风格与质感的灵感来源，围绕本次内容设计出一张既贴合参考图气质、又像全新作品的海报。${refHint}
@@ -2814,7 +2861,7 @@ $('aiPosterBtn').onclick = async event => {
     }
   };
   button.textContent = 'AI生成中…';
-  const refNote = (files.length || selectedKbImage) ? `（附${files.length + (selectedKbImage ? 1 : 0)}张参考图）` : '';
+  const refNote = (files.length || selectedKbImage) ? `（附${Math.min(3, files.length + (selectedKbImage ? 1 : 0))}张参考图）` : '';
   $('aiPosterStatus').textContent = `正在按指令生成：${instruction.slice(0, 50)}${instruction.length > 50 ? '…' : ''}${refNote}`;
   let generatedOk = false;
   try {

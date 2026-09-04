@@ -7,11 +7,11 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<link rel="stylesheet" href="styles.css?v=zbuild75">
+<link rel="stylesheet" href="styles.css?v=zbuild76">
 </head>
 <body>
 <nav id="nav">
-  <img src="assets/trip-mall-logo-transparent.png?v=zbuild75" alt="Trip MALL">
+  <img src="assets/trip-mall-logo-transparent.png?v=zbuild76" alt="Trip MALL">
   <div>
     <a href="#kb">知识库</a>
     <a href="#create">文案生成</a>
@@ -32,7 +32,7 @@
       <a class="alt" href="#video">视频生成</a>
     </div>
   </div>
-  <img class="hero-img" src="assets/trip-mall-logo-transparent.png?v=zbuild75" alt="">
+  <img class="hero-img" src="assets/trip-mall-logo-transparent.png?v=zbuild76" alt="">
 </header>
 
 <div class="ticker" aria-hidden="true"><div class="ticker-track" id="tickerTrack"></div></div>
@@ -177,8 +177,11 @@
           <div class="view" data-view="gen">
             <div class="ai-poster-box">
               <b>🪄 AI 成品海报</b>
-              <div class="ctl"><label>参考图（可选，可多张，最多3张；按顺序为图一/图二/图三，指令里可分别引用，如"按图一的排版、底图参考图二、logo 用图三"）</label>
-                <input id="aiPosterRef" type="file" accept="image/*" multiple></div>
+              <div class="ctl"><label>参考图（可选，最多3张；每次选择一张并自动追加，按顺序为图一/图二/图三）</label>
+                <input id="aiPosterRef" type="file" accept="image/*">
+                <div class="ref-list poster-ref-list" id="aiPosterRefList"></div>
+                <p class="hint">可连续点击选择文件，一张一张加入；指令里可写“按图一的排版、底图参考图二、Logo 用图三”。</p>
+              </div>
               <details class="kb-imgs">
                 <summary>📚 知识库配图（点击用作参考图，适合科普类海报）</summary>
                 <div class="kb-imgs-grid" id="kbPosterImgs"></div>
@@ -358,7 +361,7 @@
 </main>
 
 <footer>
-  <img src="assets/trip-mall-logo-transparent.png?v=zbuild75" alt="">
+  <img src="assets/trip-mall-logo-transparent.png?v=zbuild76" alt="">
   <span>携程酒店服务市场营销知识库 · AI fallback powered by Puter · V6（2026-08-23）</span>
 </footer>
 
@@ -466,8 +469,8 @@
   </div>
 </div>
 
-<script src="vendor/puter.js?v=zbuild75"></script>
-<script src="config.js?v=zbuild75"></script>
-<script src="app.js?v=zbuild75"></script>
+<script src="vendor/puter.js?v=zbuild76"></script>
+<script src="config.js?v=zbuild76"></script>
+<script src="app.js?v=zbuild76"></script>
 </body>
 </html>
