@@ -2073,8 +2073,11 @@ function buildProductEvidence(payload) {
       ? Object.entries(product.params).map(([key, value]) => `${key}：${value}`).join('；')
       : '';
     const skuLines = Array.isArray(product.skus)
-      ? product.skus.slice(0, 8).map(sku => {
-          const details = [sku.name, sku.price ? `服务市场参考价¥${sku.price}` : '', sku.minQty ? `起订量${sku.minQty}` : '', ...(sku.props || [])].filter(Boolean);
+      ? product.skus.slice(0, 50).map((sku, index) => {
+          const minQty = sku.min_qty ?? sku.minQty ?? sku.minQuantity;
+          const properties = sku.properties || sku.props || sku.packagePropertyList || [];
+          const propertyTexts = properties.map(item => typeof item === 'string' ? item : (item.propertyValue || item.value || item.name || '')).filter(Boolean);
+          const details = [`套餐${index + 1}`, sku.name, sku.price != null ? `服务市场参考价¥${sku.price}` : '', sku.original_price != null ? `原价¥${sku.original_price}` : '', sku.coupon_price != null ? `券后价¥${sku.coupon_price}` : '', minQty ? `起订量${minQty}` : '', ...propertyTexts].filter(Boolean);
           return details.join('；');
         }).filter(Boolean)
       : [];
@@ -2110,9 +2113,23 @@ async function enrichProductEvidence(payload) {
     }
   }
   const lines = detailed.map(product => {
-    const base = buildProductEvidence({ ...payload, product: `id${product.id}`, needs: '', content_type: '' });
-    const detail = [product.summary, product.detail].filter(Boolean).join('；');
-    return `${base}\n商品详情页提取内容：${detail || '未读取到；不得自行补写产品优势'}${product.detail_fetch_error ? `\n详情页读取状态：${product.detail_fetch_error}` : ''}`;
+    const packages = Array.isArray(product.skus) ? product.skus : [];
+    const packageLines = packages.slice(0, 50).map((sku, index) => {
+      const minQty = sku.min_qty ?? sku.minQty ?? sku.minQuantity;
+      const props = (sku.properties || sku.props || []).map(item => typeof item === 'string' ? item : (item.propertyValue || item.value || item.name || '')).filter(Boolean);
+      return [`子产品/套餐${index + 1}`, sku.name || '名称未获取', sku.price != null ? `参考价¥${sku.price}` : '', sku.original_price != null ? `原价¥${sku.original_price}` : '', sku.coupon_price != null ? `券后价¥${sku.coupon_price}` : '', minQty ? `起订量${minQty}` : '', ...props].filter(Boolean).join('；');
+    });
+    const params = product.params ? Object.entries(product.params).map(([key, value]) => `${key}：${value}`).join('；') : '';
+    const detailText = [product.summary, product.detail].filter(Boolean).join('；');
+    return [
+      `【商品ID ${product.id} 的完整详情证据】`,
+      `主商品名称：${product.name || '未获取'}`,
+      `供应商/品牌：${product.supplier || product.params?.品牌 || '未获取'}`,
+      params ? `商品参数：${params}` : '',
+      `全部子产品/套餐（共${packages.length}项，不得遗漏或只写标题品类）：\n${packageLines.join('\n') || '未获取套餐数据'}`,
+      `商品详情页文字：${detailText || '详情卖点主要在图片中，必须读取附带长图'}`,
+      product.detail_fetch_error ? `详情页读取状态：${product.detail_fetch_error}` : ''
+    ].filter(Boolean).join('\n');
   });
   return lines.join('\n\n');
 }
@@ -2176,13 +2193,13 @@ ${payload.product_evidence || buildProductEvidence(payload) || '未匹配到商�
 必须按以下销售逻辑成稿：
 1. 标题：点明真实商品名或明确品类价值，不出现商品ID。
 2. 开头先给数据/事实：只使用知识库、用户素材或上方商品证据中可核验的数据；数据必须与本商品直接相关。没有对应统计数据时，明确说明暂无可核验比例，改用已核验点评问题、采购问题或商品参数切入，严禁虚构百分比。
-3. 痛点拆解：解释问题为何发生，并与后文产品优势逐项对应。每个问题必须能找到一个有证据的产品参数/功能作为解决点；无法对应的痛点不要写。
-4. 产品解法：只能使用“可核验商品优势与参数”，采用“问题 → 商品参数/功能 → 对酒店经营或住客体验的具体价值”表达，不得把同类产品常识写成该商品卖点。
-5. 价格策略：写明服务市场参考价；只有证据提供市场对比价时，才能计算优惠金额或折扣。未提供时明确说明暂无可核验市场对比价，改写起订量、箱规、定制、试用、交付等已核验采购条件，禁止声称比市场价便宜。
-6. 平台收口：必须单列“为什么在携程服务市场采购”，从平台知识库选择3—5个具体理由展开，包括平台背书、品类与SKU丰富、一站式采购、品质与履约保障、送货到店、快速开票、免房置换或多样支付方式。
-7. 结尾CTA：引导酒店客户登录携程eBooking服务市场查看商品详情、核对实时价格并下单或联系BD。
-8. 全文供携程服务市场BD转发给酒店老板、店长、采购使用，绝不能写成酒店向住客推销客房。
-9. 上方附带的商品详情长图是产品卖点的最高优先级证据。先逐图识别长度、尺寸、克重、材质、刷毛软硬、触感、结构、功能、包装和适用场景，再提炼产品优势；例如只有图片明确出现“软毛、细腻、承托、释压”等文字时才能使用。\n10. 任一事实证据不足时，写“暂无可核验数据/以商品详情页为准”，不得用空泛形容词补位。` : '';
+3. 先识别商品是单品还是组合商品。若证据中包含多个“子产品/套餐”，必须完整识别全部品类，例如牙具、梳子、香皂、浴帽、护理包、剃须刀、洗发水、沐浴露等；不得只根据主标题写牙刷，也不得漏掉列表后半部分。\n4. 痛点拆解：解释问题为何发生，并与后文产品优势逐项对应。每个问题必须能找到一个有证据的产品参数/功能作为解决点；无法对应的痛点不要写。
+5. 产品解法：只能使用“可核验商品优势与参数”，采用“问题 → 商品参数/功能 → 对酒店经营或住客体验的具体价值”表达，不得把同类产品常识写成该商品卖点。
+6. 价格策略：写明服务市场参考价；只有证据提供市场对比价时，才能计算优惠金额或折扣。未提供时明确说明暂无可核验市场对比价，改写起订量、箱规、定制、试用、交付等已核验采购条件，禁止声称比市场价便宜。
+7. 平台收口：必须单列“为什么在携程服务市场采购”，从平台知识库选择3—5个具体理由展开，包括平台背书、品类与SKU丰富、一站式采购、品质与履约保障、送货到店、快速开票、免房置换或多样支付方式。
+8. 结尾CTA：引导酒店客户登录携程eBooking服务市场查看商品详情、核对实时价格并下单或联系BD。
+9. 全文供携程服务市场BD转发给酒店老板、店长、采购使用，绝不能写成酒店向住客推销客房。
+10. 上方附带的商品详情长图是产品卖点的最高优先级证据。先逐图识别长度、尺寸、克重、材质、刷毛软硬、触感、结构、功能、包装和适用场景，再提炼产品优势；例如只有图片明确出现“软毛、细腻、承托、释压”等文字时才能使用。\n11. 任一事实证据不足时，写“暂无可核验数据/以商品详情页为准”，不得用空泛形容词补位。` : '';
   return `请为以下任务输出内容：
 产品/主题：${payload.product}
 目标视角：${payload.persona}
