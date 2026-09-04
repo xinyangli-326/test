@@ -2062,6 +2062,60 @@ function matchedProductInfo(payload) {
   ).filter(Boolean).slice(0, 3);
 }
 
+function buildProductEvidence(payload) {
+  const products = matchedProductInfo(payload);
+  if (!products.length) return '';
+  const productLines = products.map(product => {
+    const params = product.params && typeof product.params === 'object'
+      ? Object.entries(product.params).map(([key, value]) => `${key}：${value}`).join('；')
+      : '';
+    const skuLines = Array.isArray(product.skus)
+      ? product.skus.slice(0, 8).map(sku => {
+          const details = [sku.name, sku.price ? `服务市场参考价¥${sku.price}` : '', sku.minQty ? `起订量${sku.minQty}` : '', ...(sku.props || [])].filter(Boolean);
+          return details.join('；');
+        }).filter(Boolean)
+      : [];
+    const verifiedAdvantages = [product.summary, product.subtitle, params, ...skuLines]
+      .filter(Boolean).join('；');
+    return [
+      `商品ID：${product.id}`,
+      `商品名称：${product.name || '未获取'}`,
+      `服务市场参考价：${product.price ? `¥${product.price}${product.unit ? '/' + product.unit : ''}` : '未获取'}`,
+      `供应商/品牌：${product.supplier || product.params?.品牌 || '未获取'}`,
+      `可核验商品优势与参数：${verifiedAdvantages || '当前商品详情库暂无可核验卖点或参数，禁止自行补写'}`,
+      `市场对比价：${product.market_price || product.compare_price || product.original_price || '未获取，禁止编造优惠金额或折扣'}`,
+      Array.isArray(product.comments) && product.comments.length
+        ? `商品评价证据：${product.comments.slice(0, 6).map(item => item.text || item).join('；')}`
+        : '商品评价证据：未获取，禁止编造评价比例或用户反馈'
+    ].join('\n');
+  });
+  return `【按商品ID匹配的可核验商品详情】\n${productLines.join('\n\n')}`;
+}
+
+async function enrichProductEvidence(payload) {
+  const products = matchedProductInfo(payload);
+  if (!products.length) return buildProductEvidence(payload);
+  const detailed = [];
+  for (const product of products) {
+    try {
+      const detail = await apiRequest('/api/product-detail', { product_id: product.id }, 35000);
+      detailed.push({ ...product, ...detail, summary: detail.summary || product.summary, detail: detail.detail || product.detail, skus: detail.packages || product.skus });
+    } catch (error) {
+      detailed.push({ ...product, detail_fetch_error: error.message });
+    }
+  }
+  const lines = detailed.map(product => {
+    const base = buildProductEvidence({ ...payload, product: `id${product.id}`, needs: '', content_type: '' });
+    const detail = [product.summary, product.detail].filter(Boolean).join('；');
+    return `${base}\n商品详情页提取内容：${detail || '未读取到；不得自行补写产品优势'}${product.detail_fetch_error ? `\n详情页读取状态：${product.detail_fetch_error}` : ''}`;
+  });
+  return lines.join('\n\n');
+}
+
+function isProductRecommendationArticle(payload) {
+  return payload.category === 'product' && payload.content_type === '优品推荐' && payload.channel === '公众号';
+}
+
 function buildFocusedSystem(payload) {
   const prods = matchedProductInfo(payload);
   if (!prods.length) return null;
@@ -2109,6 +2163,21 @@ function buildTaskPrompt(payload) {
   const wordRequirement = wordMatch
     ? `\n\n【字数要求（最高优先级，覆盖渠道默认字数）】用户明确指定字数：${wordMatch[1]}字左右。必须严格按此字数输出，允许±10%偏差，宁缺毋滥不凑字。`
     : '';
+  const productRecommendationRules = isProductRecommendationArticle(payload) ? `
+
+【产品类“优品推荐”公众号专用结构（最高优先级）】
+${payload.product_evidence || buildProductEvidence(payload) || '未匹配到商品ID对应详情：必须明确提示“当前未获取到可核验商品详情，请补充正确商品ID”，不得继续编造产品卖点。'}
+
+必须按以下销售逻辑成稿：
+1. 标题：点明真实商品名或明确品类价值，不出现商品ID。
+2. 开头先给数据/事实：只使用知识库、用户素材或上方商品证据中可核验的数据；数据必须与本商品直接相关。没有对应统计数据时，明确说明暂无可核验比例，改用已核验点评问题、采购问题或商品参数切入，严禁虚构百分比。
+3. 痛点拆解：解释问题为何发生，并与后文产品优势逐项对应。每个问题必须能找到一个有证据的产品参数/功能作为解决点；无法对应的痛点不要写。
+4. 产品解法：只能使用“可核验商品优势与参数”，采用“问题 → 商品参数/功能 → 对酒店经营或住客体验的具体价值”表达，不得把同类产品常识写成该商品卖点。
+5. 价格策略：写明服务市场参考价；只有证据提供市场对比价时，才能计算优惠金额或折扣。未提供时明确说明暂无可核验市场对比价，改写起订量、箱规、定制、试用、交付等已核验采购条件，禁止声称比市场价便宜。
+6. 平台收口：必须单列“为什么在携程服务市场采购”，从平台知识库选择3—5个具体理由展开，包括平台背书、品类与SKU丰富、一站式采购、品质与履约保障、送货到店、快速开票、免房置换或多样支付方式。
+7. 结尾CTA：引导酒店客户登录携程eBooking服务市场查看商品详情、核对实时价格并下单或联系BD。
+8. 全文供携程服务市场BD转发给酒店老板、店长、采购使用，绝不能写成酒店向住客推销客房。
+9. 任一事实证据不足时，写“暂无可核验数据/以商品详情页为准”，不得用空泛形容词补位。` : '';
   return `请为以下任务输出内容：
 产品/主题：${payload.product}
 目标视角：${payload.persona}
@@ -2124,6 +2193,7 @@ function buildTaskPrompt(payload) {
 【输出格式（必须严格遵守，逐字执行）】
 ${CHANNEL_FORMATS[payload.channel] || '按其使用场景输出完整成稿。'}
 ${wordRequirement}
+${productRecommendationRules}
 
 【硬性要求】
 1. 直接输出正文，禁止以“好的”“以下是为您准备的”“根据您的需求”等开头。
@@ -2171,6 +2241,9 @@ $('generate').onclick = async event => {
       await ensureFullProductIndex();
       button.textContent = 'AI生成中…';
     }
+    payload.product_evidence = isProductRecommendationArticle(payload)
+      ? await enrichProductEvidence(payload)
+      : buildProductEvidence(payload);
     let content;
     if (hasByok()) {
       content = await openAILikeChat(

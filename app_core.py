@@ -38,18 +38,15 @@ STICKER_STYLES = {
 TOKEN_PLAN_BASE = "https://token-plan.cn-beijing.maas.aliyuncs.com"
 
 
-def _token_plan_call(url, api_key, payload, timeout=90, headers=None):
+def _token_plan_call(url, api_key, payload, timeout=60):
     import requests
 
-    req_headers = {
-        "Authorization": "Bearer " + api_key,
-        "Content-Type": "application/json",
-    }
-    if headers:
-        req_headers.update(headers)
     resp = requests.post(
         url,
-        headers=req_headers,
+        headers={
+            "Authorization": "Bearer " + api_key,
+            "Content-Type": "application/json",
+        },
         json=payload,
         timeout=timeout,
     )
@@ -67,10 +64,6 @@ def _token_plan_error(resp, label):
             text = f"{code} {message}".strip()
     except Exception:
         pass
-    # 脱敏：抹掉错误信息里可能回显的 Key 片段
-    import re as _re
-    text = _re.sub(r"\b(sk-[A-Za-z0-9_-]{12,}|sk-sp-[A-Za-z0-9_-]{12,}|sk-ws-[A-Za-z0-9_-]{12,}|LTAI[A-Za-z0-9]{16,})\b",
-                   lambda m: m.group(1)[:4] + "…" + m.group(1)[-4:], text)
     hint = ""
     if resp.status_code == 401:
         hint = (
@@ -78,20 +71,17 @@ def _token_plan_error(resp, label):
             "且由本站中转固定调用 token-plan.cn-beijing.maas.aliyuncs.com）"
         )
     elif resp.status_code == 403:
-        hint = (
-            "（403：该模型不在你的 Token Plan 套餐版本内，"
-            "请换 qwen-image-2.0-pro / wan2.7-image 等套餐内模型）"
-        )
+        if "does not support asynchronous calls" in text:
+            hint = "（当前 Token Plan 套餐不支持异步调用，服务端将自动改用同步模式）"
+        else:
+            hint = "（403：请检查当前套餐是否包含该模型，以及 Key 是否属于当前订阅）"
     elif resp.status_code == 429:
         hint = "（触发限流或套餐额度不足，请稍后重试）"
     return f"Token Plan {label}接口错误（{resp.status_code}）：{str(text)[:200]}{hint}"
 
 
 def token_plan_chat(p):
-    """Token Plan 文本中转：走官方开放给文本的 OpenAI 兼容接口。
-    注意：Token Plan 只开放文本的 OpenAI/Anthropic 兼容端点（/compatible-mode/v1、/apps/anthropic），
-    原生 /api/v1/services/aigc/* 里的 text-generation 在 Token Plan 网关不存在（会报 url error），
-    图片才走 /api/v1/services/aigc/multimodal-generation/*。"""
+    """Token Plan 文本中转：Token Plan 接口未开放浏览器跨域，必须服务端调用"""
     api_key = str(p.get("apiKey") or "").strip()
     if not api_key:
         raise ValueError("缺少 Token Plan API Key")
@@ -100,145 +90,41 @@ def token_plan_chat(p):
     payload = {
         "model": model,
         "messages": messages,
-        "max_tokens": int(p.get("max_tokens") or 3000),
+        "max_tokens": min(max(int(p.get("max_tokens") or 1800), 1), 2400),
         "temperature": float(p.get("temperature") or 0.85),
     }
-    resp = _token_plan_call(
-        TOKEN_PLAN_BASE + "/compatible-mode/v1/chat/completions",
-        api_key,
-        payload,
-    )
+    try:
+        resp = _token_plan_call(
+            TOKEN_PLAN_BASE + "/compatible-mode/v1/chat/completions",
+            api_key,
+            payload,
+        )
+    except Exception as error:
+        if "Read timed out" in str(error) or "ReadTimeout" in type(error).__name__:
+            raise TimeoutError(
+                "Token Plan 文本生成超时：模型在 60 秒内未返回结果。已限制最大输出长度；请减少学习素材，或在 AI 设置中改用套餐内速度更快的 Flash/Plus 模型。"
+            ) from error
+        raise
     if resp.status_code != 200:
         raise RuntimeError(_token_plan_error(resp, "文本"))
     data = resp.json()
     content = ""
-    # 兼容 OpenAI 格式：choices 在顶层；同时兜底原生 output.choices
-    choices = data.get("choices") or (data.get("output") or {}).get("choices")
-    if isinstance(choices, list) and choices:
-        msg = choices[0].get("message") or {}
-        content = str(msg.get("content") or choices[0].get("text") or "")
-    if not content:
-        content = str((data.get("output") or {}).get("text") or "")
+    choices = data.get("choices") or []
+    if choices:
+        content = choices[0].get("message", {}).get("content", "") or ""
     if not content:
         raise ValueError("Token Plan 返回内容为空")
     return {"content": content}
 
 
-def token_plan_text_async(p):
-    """Token Plan 文本异步提交：立即返回 task_id，绕开同步长连接超时（与图片异步一致）"""
-    api_key = str(p.get("apiKey") or "").strip()
-    if not api_key:
-        raise ValueError("缺少 Token Plan API Key")
-    messages = p.get("messages") or []
-    model = str(p.get("model") or "qwen3.8-max").strip()
-    payload = {
-        "model": model,
-        "messages": messages,
-        "max_tokens": int(p.get("max_tokens") or 3000),
-        "temperature": float(p.get("temperature") or 0.85),
-    }
-    resp = _token_plan_call(
-        TOKEN_PLAN_BASE + "/compatible-mode/v1/chat/completions",
-        api_key,
-        payload,
-        timeout=30,
-        headers={"X-DashScope-Async": "enable"},
-    )
-    if resp.status_code != 200:
-        raise RuntimeError(_token_plan_error(resp, "文本"))
-    data = resp.json()
-    out = data.get("output") or {}
-    task_id = out.get("task_id") or data.get("task_id") or ""
-    if not task_id:
-        raise ValueError("Token Plan 文本异步接口未返回 task_id：" + str(data)[:200])
-    return {"task_id": task_id, "task_status": out.get("task_status") or "PENDING"}
-
-
-def token_plan_text_task(p):
-    """Token Plan 文本任务轮询中转：GET /tasks/{task_id}"""
-    api_key = str(p.get("apiKey") or "").strip()
-    task_id = str(p.get("task_id") or "").strip()
-    if not api_key:
-        raise ValueError("缺少 Token Plan API Key")
-    if not task_id:
-        raise ValueError("缺少文本任务 ID")
-    resp = _token_plan_get(TOKEN_PLAN_BASE + "/api/v1/tasks/" + task_id, api_key, timeout=30)
-    if resp.status_code != 200:
-        raise RuntimeError(_token_plan_error(resp, "文本"))
-    data = resp.json()
-    out = data.get("output") or {}
-    task_status = str(out.get("task_status") or data.get("task_status") or "RUNNING").upper()
-    content = ""
-    choices = out.get("choices")
-    if isinstance(choices, list) and choices:
-        msg = choices[0].get("message") or {}
-        content = str(msg.get("content") or choices[0].get("text") or "")
-    if not content:
-        content = str(out.get("text") or "")
-    result = {"task_id": task_id, "task_status": task_status, "content": content}
-    message = out.get("message") or out.get("error") or data.get("message") or ""
-    if message:
-        result["message"] = str(message)[:500]
-    return result
-
-
-def _image_content(p, prompt):
-    """从请求里取 1-3 张参考图（references 数组，兼容旧 reference）构造多模态消息内容"""
-    content = []
-    refs = p.get("references")
-    if isinstance(refs, str):
-        refs = [refs]
-    if not isinstance(refs, list):
-        refs = []
-    seen = []
-    for r in refs[:3]:
-        r = str(r or "")
-        if r.startswith("data:image") and r not in seen:
-            content.append({"image": r})
-            seen.append(r)
-    single = str(p.get("reference") or "")
-    if single.startswith("data:image") and single not in seen:
-        content.append({"image": single})
-        seen.append(single)
-    content.append({"text": prompt})
-    return content
-
-
-def token_plan_image(p):
-    """Token Plan 图片中转：走官方多模态接口，图片下载后转 base64 返回"""
-    api_key = str(p.get("apiKey") or "").strip()
-    if not api_key:
-        raise ValueError("缺少 Token Plan API Key")
-    model = str(p.get("model") or "qwen-image-3.0-pro").strip()
-    prompt = str(p.get("prompt") or "").strip()
-    if not prompt:
-        raise ValueError("缺少图片描述")
-    content = _image_content(p, prompt)
-    parameters = {"watermark": False}
-    if "prompt_extend" in p:
-        # 显式透传 true/false：前端关闭 prompt 改写（防止文字乱码）时，后端不能把 false 吞掉
-        parameters["prompt_extend"] = bool(p.get("prompt_extend"))
-    size = str(p.get("size") or "").strip()
-    if size:
-        parameters["size"] = size
-    negative_prompt = str(p.get("negative_prompt") or "").strip()
-    if negative_prompt:
-        parameters["negative_prompt"] = negative_prompt
-    payload = {
-        "model": model,
-        "input": {"messages": [{"role": "user", "content": content}]},
-        "parameters": parameters,
-    }
-    url = TOKEN_PLAN_BASE + "/api/v1/services/aigc/multimodal-generation/generation"
-    # 注意：Vercel Hobby 函数上限 60s，超过会被直接掐断；不在此处重试，避免慢速成功时重复扣费
-    resp = _token_plan_call(url, api_key, payload, timeout=240)
-    if resp.status_code != 200:
-        raise RuntimeError(_token_plan_error(resp, "图片"))
-    data = resp.json()
+def _token_plan_image_result(data):
     out = data.get("output") or {}
     url = None
     if out.get("images"):
         url = out["images"][0].get("url") or None
+    if out.get("results"):
+        first_result = out["results"][0] or {}
+        url = first_result.get("url") or first_result.get("image_url") or url
     for choice in out.get("choices") or []:
         message = choice.get("message") or {}
         parts = message.get("content") or []
@@ -254,592 +140,104 @@ def token_plan_image(p):
     if not url:
         raise ValueError("Token Plan 图片接口未返回图片")
     if url.startswith("data:"):
-        return {"image": url}
+        return {"image": url, "status": "SUCCEEDED"}
     import requests as _requests
 
     img_resp = _requests.get(url, timeout=60)
     img_resp.raise_for_status()
     return {
-        "image": "data:image/png;base64," + base64.b64encode(img_resp.content).decode()
+        "image": "data:image/png;base64," + base64.b64encode(img_resp.content).decode(),
+        "status": "SUCCEEDED",
     }
 
 
-def token_plan_image_async(p):
-    """Token Plan 图片异步提交：立即返回 task_id，不阻塞等待。
-    生图耗时长（尤其参考图编辑），同步中转会被 Vercel 函数 60s 上限掐断，
-    改用异步任务制后，中转函数只负责快速提交与轻量轮询，彻底绕开 60s 限制。"""
+def token_plan_image(p):
+    """Token Plan 图片中转：异步创建任务并由浏览器轮询，避免长请求超时。"""
+    import requests
+
     api_key = str(p.get("apiKey") or "").strip()
     if not api_key:
         raise ValueError("缺少 Token Plan API Key")
+    task_id = str(p.get("taskId") or "").strip()
+    headers = {
+        "Authorization": "Bearer " + api_key,
+        "Content-Type": "application/json",
+    }
+    if task_id:
+        try:
+            resp = requests.get(
+                TOKEN_PLAN_BASE + "/api/v1/tasks/" + task_id,
+                headers=headers,
+                timeout=(10, 25),
+            )
+        except requests.RequestException as error:
+            raise RuntimeError("Token Plan 图片任务查询失败，请稍后重试：" + str(error)) from error
+        if resp.status_code != 200:
+            raise RuntimeError(_token_plan_error(resp, "图片任务查询"))
+        data = resp.json()
+        output = data.get("output") or {}
+        status = str(output.get("task_status") or data.get("task_status") or "UNKNOWN").upper()
+        if status == "SUCCEEDED":
+            return _token_plan_image_result(data)
+        if status in {"FAILED", "CANCELED", "UNKNOWN"}:
+            message = output.get("message") or data.get("message") or "图片任务未成功完成"
+            raise RuntimeError(f"Token Plan 图片任务{status}：{message}")
+        return {"taskId": task_id, "status": status}
+
     model = str(p.get("model") or "qwen-image-3.0-pro").strip()
     prompt = str(p.get("prompt") or "").strip()
     if not prompt:
         raise ValueError("缺少图片描述")
-    content = _image_content(p, prompt)
-    parameters = {"watermark": False}
-    if "prompt_extend" in p:
-        parameters["prompt_extend"] = bool(p.get("prompt_extend"))
+    content = []
+    reference = str(p.get("reference") or "")
+    if reference.startswith("data:image"):
+        content.append({"image": reference})
+    content.append({"text": prompt})
+    parameters = {"watermark": bool(p.get("watermark", False))}
+    if p.get("prompt_extend"):
+        parameters["prompt_extend"] = True
     size = str(p.get("size") or "").strip()
     if size:
         parameters["size"] = size
-    negative_prompt = str(p.get("negative_prompt") or "").strip()
-    if negative_prompt:
-        parameters["negative_prompt"] = negative_prompt
     payload = {
         "model": model,
         "input": {"messages": [{"role": "user", "content": content}]},
         "parameters": parameters,
     }
-    resp = _token_plan_call(
-        TOKEN_PLAN_BASE + "/api/v1/services/aigc/multimodal-generation/generation",
-        api_key,
-        payload,
-        timeout=30,
-        headers={"X-DashScope-Async": "enable"},
-    )
-    if resp.status_code != 200:
-        raise RuntimeError(_token_plan_error(resp, "图片"))
-    data = resp.json()
-    out = data.get("output") or {}
-    task_id = out.get("task_id") or data.get("task_id") or ""
-    if not task_id:
-        raise ValueError("Token Plan 图片异步接口未返回 task_id：" + str(data)[:200])
-    return {"task_id": task_id, "task_status": out.get("task_status") or "PENDING"}
-
-
-def token_plan_image_task(p):
-    """Token Plan 图片任务轮询中转：GET /tasks/{task_id}"""
-    api_key = str(p.get("apiKey") or "").strip()
-    task_id = str(p.get("task_id") or "").strip()
-    if not api_key:
-        raise ValueError("缺少 Token Plan API Key")
-    if not task_id:
-        raise ValueError("缺少图片任务 ID")
-    resp = _token_plan_get(
-        TOKEN_PLAN_BASE + "/api/v1/tasks/" + task_id,
-        api_key,
-        timeout=30,
-    )
-    if resp.status_code != 200:
-        raise RuntimeError(_token_plan_error(resp, "图片"))
-    data = resp.json()
-    out = data.get("output") or {}
-    task_status = str(out.get("task_status") or data.get("task_status") or "RUNNING").upper()
-    image_url = ""
-    results = out.get("results")
-    if isinstance(results, list):
-        for item in results:
-            if isinstance(item, dict):
-                image_url = str(
-                    item.get("url")
-                    or item.get("image")
-                    or item.get("image_url")
-                    or ""
-                )
-                if image_url:
-                    break
-    if not image_url and isinstance(out.get("images"), list):
-        for item in out["images"]:
-            if isinstance(item, dict):
-                image_url = str(item.get("url") or "")
-                if image_url:
-                    break
-    if not image_url:
-        image_url = str(out.get("image_url") or out.get("image") or "")
-    result = {"task_id": task_id, "task_status": task_status, "image_url": image_url}
-    message = out.get("message") or out.get("error") or data.get("message") or ""
-    if message:
-        result["message"] = str(message)[:500]
-    return result
-
-
-def _token_plan_get(url, api_key, timeout=30):
-    import requests
-
-    resp = requests.get(
-        url,
-        headers={"Authorization": "Bearer " + api_key},
-        timeout=timeout,
-    )
-    return resp
-
-
-VIDEO_MODELS = {
-    "t2v": "happyhorse-1.1-t2v",
-    "i2v": "happyhorse-1.1-i2v",
-    "r2v": "happyhorse-1.1-r2v",
-    "edit": "happyhorse-1.0-video-edit",
-}
-
-
-def token_plan_video_create(p):
-    """Token Plan 视频中转：异步提交任务。
-    kind: t2v 文生视频 / i2v 图生视频(首帧) / r2v 参考生视频 / edit 视频编辑。
-    Token Plan 接口未开放浏览器跨域，必须由服务端调用。
-    """
-    api_key = str(p.get("apiKey") or "").strip()
-    if not api_key:
-        raise ValueError("缺少 Token Plan API Key")
-    kind = str(p.get("kind") or "t2v").strip()
-    model = VIDEO_MODELS.get(kind)
-    if not model:
-        raise ValueError("不支持的视频类型：" + kind)
-    prompt = str(p.get("prompt") or "").strip()
-    media = p.get("media") or []
-    clean_media = []
-    for item in media:
-        if isinstance(item, dict) and item.get("url"):
-            clean_media.append(
-                {
-                    "type": str(item.get("type") or "reference_image"),
-                    "url": str(item["url"]),
-                }
-            )
-    if kind in ("t2v", "r2v", "edit") and not prompt:
-        raise ValueError("缺少视频描述/编辑指令")
-    if kind == "i2v" and not clean_media:
-        raise ValueError("图生视频需要上传首帧图片")
-    if kind == "r2v" and not clean_media:
-        raise ValueError("参考生视频需要至少一张参考图")
-    if kind == "edit" and not any(m.get("type") == "video" for m in clean_media):
-        raise ValueError("视频编辑需要上传或粘贴待编辑视频")
-    video_input = {}
-    if prompt:
-        video_input["prompt"] = prompt
-    if clean_media:
-        video_input["media"] = clean_media
-    parameters = {"watermark": False}
-    resolution = str(p.get("resolution") or "720P").strip()
-    if resolution:
-        parameters["resolution"] = resolution
-    ratio = str(p.get("ratio") or "").strip()
-    if ratio and kind in ("t2v", "r2v"):
-        parameters["ratio"] = ratio
-    duration = p.get("duration")
-    if duration and kind in ("t2v", "i2v", "r2v"):
-        try:
-            parameters["duration"] = int(duration)
-        except (TypeError, ValueError):
-            pass
-    sound = str(p.get("sound_control") or "").strip()
-    if sound and kind == "edit":
-        parameters["sound_control"] = sound
-    payload = {"model": model, "input": video_input, "parameters": parameters}
-    resp = _token_plan_call(
-        TOKEN_PLAN_BASE + "/api/v1/services/aigc/video-generation/video-synthesis",
-        api_key,
-        payload,
-        timeout=60,
-    )
-    if resp.status_code != 200:
-        raise RuntimeError(_token_plan_error(resp, "视频"))
-    data = resp.json()
-    out = data.get("output") or {}
-    task_id = out.get("task_id") or ""
-    if not task_id:
-        raise ValueError("Token Plan 视频接口未返回 task_id")
-    return {"task_id": task_id, "task_status": out.get("task_status") or "PENDING"}
-
-
-def token_plan_video_get(p):
-    """Token Plan 视频轮询中转：GET /tasks/{task_id}"""
-    api_key = str(p.get("apiKey") or "").strip()
-    task_id = str(p.get("task_id") or "").strip()
-    if not api_key:
-        raise ValueError("缺少 Token Plan API Key")
-    if not task_id:
-        raise ValueError("缺少视频任务 ID")
-    resp = _token_plan_get(
-        TOKEN_PLAN_BASE + "/api/v1/tasks/" + task_id,
-        api_key,
-        timeout=30,
-    )
-    if resp.status_code != 200:
-        raise RuntimeError(_token_plan_error(resp, "视频"))
-    data = resp.json()
-    out = data.get("output") or {}
-    result = {
-        "task_id": task_id,
-        "task_status": out.get("task_status") or "RUNNING",
-        "video_url": out.get("video_url") or "",
-    }
-    message = out.get("message") or out.get("error") or data.get("message") or ""
-    if message:
-        result["message"] = str(message)[:500]
-    return result
-
-
-def token_plan_video_refs(p):
-    """参考生视频：从外部链接提取页面图片，返回公网 URL 列表作为参考图"""
-    url = str(p.get("url") or "").strip()
-    if not url:
-        raise ValueError("缺少链接")
-    raw, _ctype = _safe_fetch(url, timeout=20)
-    text = _decode_text(raw)
-    page = urlparse(url)
-    scheme = page.scheme or "https"
-    host = page.netloc or ""
-
-    def abs_url(ref):
-        ref = ref.strip().strip('"').strip("'")
-        if not ref or ref.lower().startswith("data:"):
-            return ""
-        if ref.startswith("//"):
-            return scheme + ":" + ref
-        if ref.startswith(("http://", "https://")):
-            return ref
-        if ref.startswith("/"):
-            return scheme + "://" + host + ref
-        return scheme + "://" + host + "/" + ref
-
-    candidates = []
-    for m in re.finditer(
-        r'<meta[^>]+(?:og:image|twitter:image)[^>]+>', text, re.I
-    ):
-        cm = re.search(r'content=["\']([^"\']+)["\']', m.group(0), re.I)
-        if cm:
-            candidates.append(cm.group(1))
-    for m in re.finditer(r'<img[^>]+src=["\']([^"\']+)["\']', text, re.I):
-        candidates.append(m.group(1))
-    for m in re.finditer(r'(?:<img[^>]+|<source[^>]+)srcset=["\']([^"\']+)["\']', text, re.I):
-        first = m.group(1).split(",")[0].strip().split(" ")[0]
-        candidates.append(first)
-    for m in re.finditer(r'background-image\s*:\s*url\(["\']?([^"\')\s]+)', text, re.I):
-        candidates.append(m.group(1))
-    for attr in ("data-src", "data-original", "data-lazy-src", "data-echo", "data-url"):
-        for m in re.finditer(attr + r'=["\']([^"\']+)["\']', text, re.I):
-            candidates.append(m.group(1))
-    bad_tokens = (
-        "logo",
-        "icon",
-        "sprite",
-        "loading",
-        "placeholder",
-        "pixel",
-        "blank",
-        "avatar",
-        "spinner",
-        "1x1",
-    )
-    seen, images = set(), []
-    for ref in candidates:
-        abs_url_value = abs_url(ref)
-        if not abs_url_value or abs_url_value in seen:
-            continue
-        lower = abs_url_value.lower()
-        if any(token in lower for token in bad_tokens):
-            continue
-        if not lower.endswith((".jpg", ".jpeg", ".png", ".webp", ".gif")):
-            continue
-        seen.add(abs_url_value)
-        images.append(abs_url_value)
-        if len(images) >= 9:
-            break
-    if not images:
-        raise ValueError("未从该链接提取到可用图片，请直接上传参考图")
-    return {"images": images}
-
-
-LARK_AUTH_URL = "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal"
-LARK_DOC_META = "https://open.feishu.cn/open-apis/docx/v1/documents/{doc_id}"
-LARK_DOC_RAW = "https://open.feishu.cn/open-apis/docx/v1/documents/{doc_id}/raw_content"
-
-
-def _lark_tenant_token(app_id, app_secret):
-    import requests
-
-    resp = requests.post(
-        LARK_AUTH_URL,
-        json={"app_id": app_id, "app_secret": app_secret},
-        timeout=15,
-    )
-    data = resp.json()
-    if resp.status_code != 200 or data.get("code") not in (0, None):
-        msg = data.get("msg") or str(data)[:200]
-        raise RuntimeError("飞书应用鉴权失败：" + str(msg))
-    token = data.get("tenant_access_token")
-    if not token:
-        raise RuntimeError("飞书应用鉴权未返回 token")
-    return token
-
-
-def _lark_time(value):
-    from datetime import datetime, timezone, timedelta
-
+    headers["X-DashScope-Async"] = "enable"
     try:
-        return datetime.fromtimestamp(int(value) / 1000, tz=timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M")
-    except Exception:
-        return str(value or "")
-
-
-def _cn_now():
-    from datetime import datetime, timezone, timedelta
-
-    return datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M:%S")
-
-
-def _lark_public_content(html):
-    """从公开飞书文档 HTML 尽力提取正文。"""
-    m = re.search(r'"(?:content|text|body)"\s*:\s*"((?:[^"\\]|\\.){20,})"', html)
-    if m:
-        try:
-            return m.group(1).encode("latin1", errors="ignore").decode("unicode_escape", errors="ignore")
-        except Exception:
-            return m.group(1)
-    return _html_to_text(html.encode("utf-8", errors="ignore"))
-
-
-def _lark_docx_parse(html):
-    """解析公开飞书文档（docx）页面内嵌的 window.DATA → 还原正文与附件列表。
-    返回 {"text": ..., "files": [{"token","name","mimeType","size"}], "title": ...}
-    """
-    marker = "window.DATA = Object.assign({}, window.DATA, { clientVars: Object("
-    idx = html.find(marker)
-    if idx < 0:
-        # 兼容其他挂载形式
-        m2 = re.search(r"clientVars:\s*Object\((\{)", html)
-        if not m2:
-            return None
-        seg = html[m2.start(1):]
-    else:
-        seg = html[idx + len(marker):]  # 从 clientVars 的 { 开始
-    depth = 0
-    end = 0
-    for i, ch in enumerate(seg):
-        if ch == "{":
-            depth += 1
-        elif ch == "}":
-            depth -= 1
-            if depth == 0:
-                end = i + 1
-                break
-    if not end:
-        return None
-    try:
-        cv = json.loads(seg[:end])
-    except Exception:
-        return None
-    data = cv.get("data") or {}
-    block_map = data.get("block_map") or {}
-    sequence = data.get("block_sequence") or []
-    seq_index = {bid: i for i, bid in enumerate(sequence)}
-
-    def children_of(bid):
-        kids = [b for b in block_map.values() if b.get("parent_id") == bid]
-        kids.sort(key=lambda b: seq_index.get(b.get("id"), 99999))
-        return kids
-
-    def block_text(bid):
-        b = block_map.get(bid) or {}
-        dd = b.get("data") or {}
-        parts = []
-        if dd.get("type") == "text":
-            it = (dd.get("text") or {}).get("initialAttributedTexts") or {}
-            tm = it.get("text") or {}
-            parts.append("".join(v for _, v in sorted(tm.items(), key=lambda kv: int(kv[0]))))
-        for c in children_of(bid):
-            parts.append(block_text(c.get("id")))
-        for cid in dd.get("children") or []:
-            parts.append(block_text(cid))
-        return "".join(parts).strip()
-
-    # 从 page 根块递归构建文档结构（段落 + 表格）
-    def render_block(bid):
-        b = block_map.get(bid) or {}
-        dd = b.get("data") or {}
-        btype = dd.get("type")
-        out = []
-        if btype == "text":
-            t = block_text(bid)
-            if t:
-                out.append(t)
-        elif btype == "table":
-            cols = dd.get("columns_id") or []
-            rows_ids = dd.get("rows_id") or []
-            cell_set = dd.get("cell_set") or {}
-            for rid in rows_ids:
-                cells = []
-                for cid in cols:
-                    rid_clean = rid[3:] if rid.startswith("row") else rid
-                    cid_clean = cid[3:] if cid.startswith("col") else cid
-                    info = cell_set.get("row" + rid_clean + "col" + cid_clean) or {}
-                    cells.append(block_text(info.get("block_id") or ""))
-                out.append(" | ".join(cells))
-        for cid in dd.get("children") or []:
-            out.extend(render_block(cid))
-        return out
-
-    lines = []
-    for bid in sequence:
-        b = block_map.get(bid) or {}
-        if (b.get("data") or {}).get("type") == "page":
-            lines = render_block(bid)
-            break
-    files = []
-    for b in block_map.values():
-        dd = b.get("data") or {}
-        if dd.get("type") == "file":
-            f = dd.get("file") or {}
-            if f.get("token"):
-                files.append(
-                    {
-                        "token": f["token"],
-                        "name": f.get("name") or "",
-                        "mimeType": f.get("mimeType") or "",
-                        "size": f.get("size") or 0,
-                    }
-                )
-    text = "\n".join(lines).strip()
-    title = ""
-    tm = re.search(r'"title":"((?:[^"\\]|\\.){1,200})"', html)
-    if tm:
-        raw_title = tm.group(1)
-        try:
-            title = raw_title.encode("latin1", errors="ignore").decode("unicode_escape", errors="ignore")
-        except Exception:
-            title = raw_title
-        if not title or not re.search(r"[\u4e00-\u9fff]", title):
-            title = raw_title
-    if not text:
-        return None
-    return {"text": text, "files": files, "title": title}
-
-
-def lark_doc_text(p):
-    """读取飞书文档正文。
-    优先走飞书开放平台 API（app_id/app_secret，可配在 Vercel 环境变量 LARK_APP_ID/LARK_APP_SECRET）；
-    未配置时尝试公开文档直抓（文档需设为「互联网上获得链接的人可阅读」）。
-    """
-    import requests
-
-    url = str(p.get("url") or "").strip()
-    document_id = str(p.get("document_id") or "").strip()
-    if not document_id and url:
-        m = re.search(r"/docx/([A-Za-z0-9]+)", url)
-        if m:
-            document_id = m.group(1)
-    if not document_id:
-        raise ValueError("缺少飞书文档链接或 document_id")
-    key = str(p.get("key") or "doc")
-    fallback_name = str(p.get("name") or "飞书内容库")
-    app_id = str(p.get("app_id") or os.getenv("LARK_APP_ID") or "").strip()
-    app_secret = str(p.get("app_secret") or os.getenv("LARK_APP_SECRET") or "").strip()
-    if app_id and app_secret:
-        token = _lark_tenant_token(app_id, app_secret)
-        headers = {"Authorization": "Bearer " + token}
-        meta_resp = requests.get(LARK_DOC_META.format(doc_id=document_id), headers=headers, timeout=15)
-        meta_data = meta_resp.json()
-        doc_meta = {}
-        if meta_resp.status_code == 200 and meta_data.get("code") in (0, None):
-            doc_meta = (meta_data.get("data") or {}).get("document") or {}
-        raw_resp = requests.get(LARK_DOC_RAW.format(doc_id=document_id), headers=headers, timeout=30)
-        raw_data = raw_resp.json()
-        if raw_resp.status_code != 200 or raw_data.get("code") not in (0, None):
-            msg = raw_data.get("msg") or str(raw_data)[:200]
-            raise RuntimeError("飞书文档读取失败（API）：" + str(msg))
-        content = (raw_data.get("data") or {}).get("content") or ""
-        if not content.strip():
-            raise RuntimeError("飞书文档内容为空（可能文档为空或应用没有该文档查看权限）")
-        return {
-            "key": key,
-            "name": doc_meta.get("title") or fallback_name,
-            "text": content[:30000],
-            "updated_at": _lark_time(doc_meta.get("update_time")),
-            "source": "api",
-        }
-    if not url:
-        url = "https://trip.larkenterprise.com/docx/" + document_id
-    raw, _ctype = _safe_fetch(url, timeout=20)
-    html = _decode_text(raw)
-    login_markers = (
-        "loginAppId",
-        "crossLoginUrl",
-        "grayLogin",
-    )
-    if any(marker in html for marker in login_markers):
-        raise RuntimeError(
-            "飞书文档未公开（访问返回登录页）：请在飞书分享设置里把权限改为「互联网上获得链接的人可阅读」，"
-            "或在 Vercel 环境变量配置 LARK_APP_ID / LARK_APP_SECRET（企业自建应用）后重试"
+        resp = requests.post(
+            TOKEN_PLAN_BASE + "/api/v1/services/aigc/multimodal-generation/generation",
+            headers=headers,
+            json=payload,
+            timeout=(10, 30),
         )
-    parsed = _lark_docx_parse(html)
-    if parsed:
-        content = parsed.get("text") or ""
-    else:
-        content = _lark_public_content(html)
-    if not content.strip():
-        raise RuntimeError(
-            "文档未公开或无法解析：请在飞书里把文档分享改为「互联网上获得链接的人可阅读」，"
-            "或在 Vercel 环境变量配置 LARK_APP_ID / LARK_APP_SECRET（企业自建应用，需云文档只读权限）后重试"
-        )
-    return {
-        "key": key,
-        "name": (parsed or {}).get("title") or fallback_name,
-        "text": content[:30000],
-        "files": (parsed or {}).get("files") or [],
-        "updated_at": "",
-        "source": "public",
-    }
-
-
-def lark_sync(p):
-    """同步飞书内容库：逐个拉取文档正文，返回可直接并入知识库的文本列表。"""
-    docs = p.get("docs") or []
-    if not docs and isinstance(KB.get("lark"), dict):
-        docs = KB["lark"].get("docs") or []
-    if not docs:
-        raise ValueError("未配置飞书文档：knowledge_base.json 的 lark.docs 为空")
-    results = []
-    for doc in docs:
+    except requests.RequestException as error:
+        raise RuntimeError("Token Plan 图片任务创建失败，请稍后重试：" + str(error)) from error
+    if resp.status_code == 403 and "does not support asynchronous calls" in (resp.text or ""):
+        headers.pop("X-DashScope-Async", None)
         try:
-            results.append(lark_doc_text(doc))
-        except Exception as error:
-            results.append(
-                {
-                    "key": str(doc.get("key") or "doc"),
-                    "name": str(doc.get("name") or "飞书内容库"),
-                    "error": str(error),
-                }
+            resp = requests.post(
+                TOKEN_PLAN_BASE + "/api/v1/services/aigc/multimodal-generation/generation",
+                headers=headers,
+                json=payload,
+                timeout=(10, 240),
             )
+        except requests.ReadTimeout as error:
+            raise TimeoutError("Token Plan Image 3.0 Pro 同步生成超过 240 秒，请重试；服务端已启用长任务时限。") from error
+        except requests.RequestException as error:
+            raise RuntimeError("Token Plan Image 3.0 Pro 同步生成失败：" + str(error)) from error
+    if resp.status_code not in {200, 201, 202}:
+        raise RuntimeError(_token_plan_error(resp, "图片任务创建"))
+    data = resp.json()
+    output = data.get("output") or {}
+    task_id = str(output.get("task_id") or data.get("task_id") or "").strip()
+    if not task_id:
+        return _token_plan_image_result(data)
     return {
-        "docs": results,
-        "synced_at": _cn_now(),
+        "taskId": task_id,
+        "status": str(output.get("task_status") or "PENDING").upper(),
     }
-
-
-_LARK_KB_CACHE = {"at": 0.0, "docs": None, "error": "", "synced_at": ""}
-
-
-def knowledge_live():
-    """聚合知识库：静态 KB + 飞书内容库（带 10 分钟进程内缓存，避免每次请求都抓飞书）。"""
-    import copy
-    import time as _time
-
-    merged = copy.deepcopy(KB)
-    now = _time.time()
-    cached = _LARK_KB_CACHE
-    if cached["docs"] is None or now - cached["at"] > 600:
-        try:
-            synced = lark_sync({})
-            docs = synced.get("docs") or []
-            cached.update(
-                {
-                    "at": now,
-                    "docs": docs,
-                    "error": "",
-                    "synced_at": synced.get("synced_at") or "",
-                }
-            )
-        except Exception as error:
-            cached.update({"at": now, "docs": [], "error": str(error), "synced_at": ""})
-    lark = merged.setdefault("lark", {})
-    # docs 保留配置（含 url/document_id，供前端跳转与再次同步）；
-    # 同步结果单独放 synced_docs，避免覆盖配置字段
-    lark["docs"] = KB.get("lark", {}).get("docs") or []
-    lark["synced_docs"] = cached["docs"] or []
-    lark["synced_at"] = cached["synced_at"]
-    lark["last_error"] = cached["error"]
-    return merged
-
 
 POSTER_STYLES = {
     "香槟金轻奢": "champagne gold and warm ivory luxury style, soft metallic accents, elegant, high-end hotel brand",
@@ -921,12 +319,66 @@ CHANNEL_FORMATS = {
 }
 
 
+def _pet_room_context(product, channel=""):
+    if not re.search(r"宠物|携宠", str(product or ""), re.I):
+        return ""
+    pet = KB.get("pet_room_data") or {}
+    if not pet:
+        return ""
+    facts = "；".join(
+        f"{item.get('metric')}：{item.get('value')}（{item.get('note', '')}）"
+        for item in pet.get("market", {}).get("facts", [])
+    )
+    pains = "；".join(
+        f"{item.get('name')}：{'、'.join(item.get('details', []))}"
+        for item in pet.get("consumer_pain_points", [])
+    )
+    values = "；".join(
+        pet.get("hotel_value", {}).get("revenue", [])
+        + pet.get("hotel_value", {}).get("operation", [])
+        + pet.get("hotel_value", {}).get("marketing", [])
+    )
+    solutions = "；".join(
+        f"{item.get('name')}：{'、'.join(item.get('details', []))}"
+        for item in pet.get("solution", {}).get("five_advantages", [])
+    )
+    psychology = "；".join(
+        f"{role}：{'、'.join(points)}"
+        for role, points in pet.get("customer", {}).get("hotel_decision_psychology", {}).items()
+    )
+    return "\n".join([
+        "宠物友好房专项知识（优先使用）：",
+        "方案定位：" + pet.get("positioning", {}).get("one_sentence", ""),
+        "内容边界：" + pet.get("positioning", {}).get("content_boundary", ""),
+        "市场依据：" + facts,
+        "宠主痛点：" + pains,
+        "酒店价值：" + values,
+        "方案构成：" + solutions,
+        "客户决策心理：" + psychology,
+        "准入条件：" + "、".join(pet.get("eligibility", {}).get("required", [])),
+        "不可改造：" + "、".join(pet.get("eligibility", {}).get("not_suitable", [])),
+        "套餐区分：启航版=" + pet.get("packages", {}).get("starter", {}).get("price", "") + "，" + pet.get("packages", {}).get("starter", {}).get("scope_hint", "") + "；确认版=" + pet.get("packages", {}).get("confirmed", {}).get("scope_hint", ""),
+        "三合一卖法：" + pet.get("product_architecture", {}).get("sales_translation", ""),
+        "公众号参考文风：" + pet.get("style_profile", {}).get("positioning", "") + "；结构=" + "→".join(pet.get("style_profile", {}).get("structure", [])),
+        "当前渠道文风适配：" + pet.get("style_profile", {}).get("channel_adaptation", {}).get(channel, ""),
+        "BD表达逻辑：" + "；".join(pet.get("bd_messaging", {}).get("logic", [])),
+        "禁止事项：" + "；".join(pet.get("bd_messaging", {}).get("avoid", []) + [item.get("rewrite", "") for item in pet.get("style_profile", {}).get("forbidden_or_rewrite", [])]),
+        "数据合规：" + pet.get("roi", {}).get("usage_rule", "") + pet.get("compliance", {}).get("claims", ""),
+    ])
+
+
 def generate(p):
     cat = KB["categories"].get(p.get("category"), {})
     channel = p.get("channel") or "朋友圈"
     needs = p.get("needs") or "无"
     profile = p.get("profile") or ""
     materials = p.get("materials") or ""
+    product_evidence = p.get("product_evidence") or ""
+    is_product_recommendation_article = (
+        p.get("category") == "product"
+        and p.get("content_type") == "优品推荐"
+        and channel == "公众号"
+    )
     stance = (
         "平台立场（最高优先级，必须严格遵守）：你是携程酒店服务市场（Hmall）的内容运营。"
         "服务市场是酒店B2B一站式采购与服务平台：服务商/供应商把酒店经营所需的产品与服务"
@@ -952,86 +404,33 @@ def generate(p):
         for c in mp.get("catalog", {}).get("categories", [])
     ]
     adv = mp.get("advantages", {})
-    live = mp.get("live", {}) or {}
-    live_cats = live.get("categories") or []
-    wants_compare = bool(re.search(r"对比|比较|分析|竞品|哪个好|哪家好|品牌推荐|选型|区别|差异|怎么选",
-                                   str(p.get("needs") or "") + str(p.get("product") or "") + str(p.get("content_type") or "")))
-    matched_live = [
-        c for c in live_cats
-        if wants_compare or not p.get("category") or c.get("name") == p.get("category") or c.get("parent") == p.get("category")
-    ]
-    live_cat_lines = []
-    for c in matched_live[: (10 if wants_compare else 6)]:
-        brand_note = "（服务市场在售，可按需对比）" if wants_compare and c.get("brands") else ""
-        live_cat_lines.append(
-            f"- {c.get('parent')} / {c.get('name')}（cat={c.get('cat')}）："
-            f"三级分类：{'、'.join(c.get('sub_categories') or []) or '—'}；"
-            f"代表品牌：{'、'.join(c.get('brands') or []) or '—'}{brand_note}；"
-            f"在售代表商品：{'；'.join(c.get('sample_products') or []) or '—'}"
-        )
-    wants_recommendation = bool(re.search(r"推荐|好物|精选|清单|爆款", str(p.get("needs") or "") + str(p.get("content_type") or "")))
-    flagship_all = live.get("flagship_products") or []
-    kw = str(p.get("needs") or "") + str(p.get("product") or "")
-    is_broad_cat = not p.get("category") or p.get("category") in ("product", "platform", "campaign", "insight", "payment")
-    kw_tags = ["宠物", "布草", "亲子", "影音", "舒睡", "智能", "机器人", "耗品", "牙具", "毛巾", "床垫", "吹风机", "摄影", "旅拍", "电玩", "电竞", "咖啡", "食材"]
-    def kw_score(item):
-        name = str(item.get("name") or "") + str(item.get("cat") or "") + str(item.get("note") or "")
-        return sum(3 for t in kw_tags if t in kw and t in name)
-    flagship = [
-        p_ for p_ in flagship_all
-        if wants_recommendation or wants_compare or is_broad_cat or not p_.get("cat") or p_["cat"] == p.get("category") or p_["cat"] in str(p.get("category"))
-    ]
-    flagship.sort(key=kw_score, reverse=True)
-    flagship = flagship[: (24 if (wants_recommendation or wants_compare) else 12)]
-    flagship_lines = [
-        f"- {p_.get('name')}｜{p_.get('cat') or ''}｜{p_.get('price') or ''}｜{p_.get('sales') or ''}"
-        f"{'｜' + p_.get('rating') if p_.get('rating') else ''}"
-        f"{'｜' + p_.get('coupon') if p_.get('coupon') else ''}"
-        f"{'｜' + p_.get('note') if p_.get('note') else ''}"
-        for p_ in flagship
-    ]
-    coupon_lines = [
-        f"- ¥{c.get('amount')} {c.get('threshold')}｜{c.get('scope')}"
-        f"{'｜' + c.get('note') if c.get('note') else ''}"
-        for c in (live.get("key_coupons") or [])
-    ]
-    stats = live.get("platform_stats") or {}
     kb_extra = "\n".join([
         "服务市场产品体系（写内容时按需引用）：",
         "\n".join(catalog_lines),
         f"官方六大服务保障：{adv.get('official_guarantees', '')}",
         "平台优势：" + "；".join(adv.get("platform_advantages", [])),
+        _pet_room_context(p.get("product"), channel),
     ])
-    live_extra = ""
-    if live_cats:
-        live_parts = [
-            f"【服务市场实时商品库（{live.get('updated_at') or '最近抓取'}快照）】",
-            f"平台大盘：{stats.get('suppliers') or '—'}家供应商｜年销量{stats.get('annual_sales_orders') or '—'}单｜在售商品{stats.get('sku_count') or '—'}种",
-        ]
-        if live_cat_lines:
-            live_parts.append("当前品类明细：\n" + "\n".join(live_cat_lines))
-        if flagship_lines:
-            live_parts.append("热销/上新好物参考：\n" + "\n".join(flagship_lines))
-        if coupon_lines:
-            live_parts.append("当前活动券参考：\n" + "\n".join(coupon_lines))
-        if live.get("update_note"):
-            live_parts.append("【数据时效说明】" + live["update_note"])
-        live_extra = "\n".join(live_parts)
-    compare_rule = (
-        "6. 本任务需要品牌对比/分析：必须从【服务市场实时商品库】与【热销/上新好物参考】中引用真实在售品牌与商品名"
-        "（如红杉树、尊客、恒创、悦诗兰庭、洁柔、小帅、奶龙、B.Duck、梦百合等），逐品牌说明定位、代表商品、价格区间、"
-        "销量/好评与适用酒店场景；禁止用“某品牌”“部分品牌”“一些品牌”等含糊表述代替具体品牌名。"
-        "若知识库中某品类缺少品牌数据，如实说明“该品类暂无明确品牌数据”，不得编造。"
-        if wants_compare else ""
-    )
-    prompt = f"""你是携程酒店服务市场的资深内容运营，为酒店写真实、生动、可直接发布的中文内容。
+    recommendation_rules = ""
+    if is_product_recommendation_article:
+        evidence = product_evidence or "未匹配到商品ID对应详情：必须提示用户补充正确商品ID，不得编造商品卖点。"
+        recommendation_rules = f"""
+【产品类“优品推荐”公众号专用结构（最高优先级）】
+{evidence}
+1. 开头先给与商品直接相关的可核验数据或事实；没有统计数据时明确说明暂无可核验比例，严禁虚构百分比。
+2. 按“问题/成因 → 已核验商品参数或功能 → 对酒店经营或住客体验的具体价值”逐项对应，没有证据的卖点不写。
+3. 仅在证据中存在市场对比价时计算优惠金额或折扣；否则说明暂无可核验对比价，并使用已核验采购条件。
+4. 结尾单列“为什么在携程服务市场采购”，引用平台知识库中的平台背书、丰富品类、一站式采购、品质与履约保障及多样支付方式。
+5. 内容供服务市场BD转发给酒店客户，禁止写成酒店向住客宣传；标题和正文不得出现商品ID。
+6. 无法核验的信息写“暂无可核验数据/以商品详情页为准”，不得编造。
+"""
+    prompt = f"""你是携程酒店服务市场的资深BD营销顾问，代表服务市场向酒店客户销售解决方案，产出供BD发布、转发或用于销售沟通的中文内容。
 {stance}
 {product_brief}
 {kb_extra}
-{live_extra}
 知识库大类：{cat.get('name')}；定义：{cat.get('description')}；可参考主题：{cat.get('topics')}
 产品/主题：{p.get('product')}
-目标视角：{p.get('persona')}
+目标客户角色（用于洞察经营压力、采购顾虑和决策动机，不是发文身份）：{p.get('persona')}
 发布渠道/文章类型：{channel}
 内容类型：{p.get('content_type')}
 生成需求（个性化要求，务必逐一满足）：{needs}
@@ -1039,6 +438,7 @@ def generate(p):
 文章风格样本：{str(p.get('style_samples') or '')[:12000]}
 风格画像（AI学习总结，生成时严格遵循其语气、句式与结构习惯）：{str(profile)[:6000]}
 用户学习素材摘要（提炼要点融入，不要照抄原文）：{str(materials)[:8000]}
+{recommendation_rules}
 
 【输出格式（必须严格遵守，逐字执行）】
 {CHANNEL_FORMATS.get(channel, '按其使用场景输出完整成稿。')}
@@ -1048,9 +448,7 @@ def generate(p):
 2. 禁止复述或总结用户需求；禁止空话、套话、车轱辘话凑字数——字数宁短勿水，严格卡在格式要求范围内。
 3. 站在服务市场/商家面向酒店客户的角度展开（除非用户明确要求酒店视角）。
 4. 若用户给出已有文案或细节要求（调整细节、强调IP、强调功能、强调价格），先理解原意再改写，不丢失关键信息。
-5. 内部数字写成参考值，不编造平台规则；避免“值得注意的是”“综上所述”“在这个…的时代”等AI腔。
-{compare_rule}
-7. 涉及具体价格、销量、优惠券时，标注“参考价/参考销量”，并提示以服务市场页面为准。"""
+5. 内部数字写成参考值，不编造平台规则；避免“值得注意的是”“综上所述”“在这个…的时代”等AI腔。"""
     return chat(
         prompt,
         system="你是Trip MALL携程酒店服务市场的首席内容官，擅长把营销信息写成有人味的内容。",
@@ -1134,30 +532,27 @@ no deformed anatomy, no extra hands, no copyrighted character imitation."""
 
 def poster(p):
     product = p.get("product", "酒店服务市场")
-    style = p.get("style", "")
+    style = p.get("style", "香槟金轻奢")
     scene = p.get("scene", "")
     desc = (p.get("description") or "").strip()
     elements = (p.get("elements") or "").strip()
-    style_desc = POSTER_STYLES.get(style, "")
-    if style_desc:
-        style_line = f" Style: {style_desc}."
-    else:
-        style_line = " Style: color palette and mood naturally matched to the theme, rich and varied, avoid a single monotonous brand tone."
+    style_desc = POSTER_STYLES.get(style, POSTER_STYLES["香槟金轻奢"])
     scene_desc = POSTER_SCENES.get(scene, "") if scene else ""
     user_part = f" The main subject MUST be exactly: {desc}." if desc else ""
     motif_part = f" Include subtle supporting motifs related to: {elements}." if elements else ""
     scene_part = f" Scene: {scene_desc}." if scene_desc else " Scene: elegant premium hotel environment."
-    palette_part = "champagne gold / warm ivory / dark coffee palette." if "香槟" in style or "金色" in style or "轻奢" in style else "a color palette naturally matched to the theme and scene, rich and varied."
     prompt = (
         "Create a vertical 9:16 hotel marketing poster background as professional "
-        "commercial photography with a polished advertising look.\n"
+        "real-life commercial photography, not illustration, not abstract art.\n"
         f"Theme of the poster: {product}.\n"
-        f"{style_line}{scene_part}{user_part}{motif_part}\n"
+        f"Style: {style_desc}.\n{scene_part}{user_part}{motif_part}\n"
         "Composition: one clear realistic subject, generous clean empty space in the "
         "center and lower third for headline text, soft realistic lighting, high "
-        "dynamic range, sharp focus, " + palette_part + "\n"
-        "Avoid: any text, watermark, logo, distorted faces or bodies, messy collage, "
-        "or a flat single-tone look. Keep it natural, vivid and premium."
+        "dynamic range, sharp focus, premium Trip MALL brand palette (champagne gold "
+        "#C39F77, warm ivory, dark coffee).\n"
+        "MUST NOT contain: any text, letters, numbers, watermark, logo, people's faces, "
+        "hands, deformed bodies, strange creatures, abstract floating shapes, collage, "
+        "comic or cartoon style, overcrowded scenes. Keep it calm, realistic and premium."
     )
     return image(prompt, "1024x1536", transparent=False)
 
@@ -1171,7 +566,7 @@ def poster_learn(p):
     prompt = """分析这张酒店营销海报，只返回JSON（不要Markdown）：
 {
   "style_name": "一句话概括风格",
-  "colors": ["从这张海报实际主色中提取的2-4个真实色值"],
+  "colors": ["#C39F77", "#FFFFFF"],
   "layout": "构图方式描述",
   "font_feel": "字体气质，如粗黑、衬线优雅、圆润可爱",
   "tone": "文案语气，如亲切、高级、促销感",
@@ -1349,6 +744,63 @@ def _office_text(name, data):
         reader = PdfReader(data)
         return "\n".join((page.extract_text() or "") for page in reader.pages)
     return ""
+
+
+def _plain_html(value):
+    return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", str(value or ""))).strip()
+
+
+def product_detail(p):
+    product_id = re.sub(r"\D", "", str(p.get("product_id") or ""))
+    if not product_id:
+        raise ValueError("缺少商品ID")
+    cookie = os.environ.get("HMALL_COOKIE", "").strip()
+    if not cookie:
+        raise ValueError("Vercel 尚未配置 HMALL_COOKIE，无法读取登录后的服务市场商品详情")
+    import requests
+    response = requests.post(
+        "https://ebooking.ctrip.com/hmall/api/product/getProduct",
+        headers={
+            "Content-Type": "application/json;charset=UTF-8",
+            "Accept": "application/json, text/plain, */*",
+            "Referer": f"https://ebooking.ctrip.com/hmall/product/detail/{product_id}",
+            "Cookie": cookie,
+            "User-Agent": "Mozilla/5.0",
+        },
+        json={"productId": product_id},
+        timeout=30,
+    )
+    if "text/html" in response.headers.get("content-type", "").lower():
+        raise ValueError("HMALL_COOKIE 已失效，服务市场返回登录页，请更新 Vercel 环境变量")
+    response.raise_for_status()
+    body = response.json()
+    data = body.get("data") if isinstance(body, dict) else None
+    if not data:
+        raise ValueError((body or {}).get("message") or "商品详情接口未返回数据")
+    packages = []
+    for item in data.get("packages") or []:
+        packages.append({
+            "name": item.get("name"),
+            "price": item.get("price"),
+            "original_price": item.get("originPrice"),
+            "coupon_price": item.get("couponPrice"),
+            "min_qty": item.get("minQuantity"),
+            "properties": [x.get("propertyValue") or x.get("value") or str(x) for x in (item.get("packagePropertyList") or [])],
+        })
+    return {
+        "id": product_id,
+        "name": data.get("name"),
+        "subtitle": data.get("subtitle"),
+        "summary": _plain_html(data.get("summary")),
+        "detail": _plain_html(data.get("detail"))[:12000],
+        "supplier": (data.get("supplier") or {}).get("supplierName"),
+        "packages": packages,
+        "delivery": {"source": data.get("sourceAddress"), "freight": data.get("freightInfo")},
+        "guarantees": {
+            "seven_day_return": data.get("enableSevenDayReturn"),
+            "trial": data.get("trial"),
+        },
+    }
 
 
 def extract(p):
