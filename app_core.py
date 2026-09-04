@@ -777,6 +777,13 @@ def product_detail(p):
     data = body.get("data") if isinstance(body, dict) else None
     if not data:
         raise ValueError((body or {}).get("message") or "商品详情接口未返回数据")
+    detail_html = str(data.get("detail") or "")
+    detail_images = []
+    for image_url in re.findall(r"<img[^>]+src=[\'\"]([^\'\"]+)[\'\"]", detail_html, re.I):
+        if image_url.startswith("//"):
+            image_url = "https:" + image_url
+        if image_url.startswith("https://") and image_url not in detail_images:
+            detail_images.append(image_url)
     packages = []
     for item in data.get("packages") or []:
         packages.append({
@@ -792,7 +799,8 @@ def product_detail(p):
         "name": data.get("name"),
         "subtitle": data.get("subtitle"),
         "summary": _plain_html(data.get("summary")),
-        "detail": _plain_html(data.get("detail"))[:12000],
+        "detail": _plain_html(detail_html)[:12000],
+        "detail_images": detail_images[:20],
         "supplier": (data.get("supplier") or {}).get("supplierName"),
         "packages": packages,
         "delivery": {"source": data.get("sourceAddress"), "freight": data.get("freightInfo")},

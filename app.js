@@ -173,7 +173,7 @@ function imageConfigError() {
   return '未配置图片生成：请先在「AI 设置」里把图片服务商设为阿里云百炼 / 千问AI平台 Token Plan（月付套餐）或智谱 CogView 并填写 Key。';
 }
 
-async function openAILikeChat(system, user, { maxTokens = 3000, temperature = 0.85, deep = false } = {}) {
+async function openAILikeChat(system, user, { maxTokens = 3000, temperature = 0.85, deep = false, images = [] } = {}) {
   const cfg = getAIConfig();
   const provider = AI_PROVIDERS[cfg.provider] || AI_PROVIDERS.custom;
   // 深度思考：优先切到带思考能力的模型
@@ -187,13 +187,16 @@ async function openAILikeChat(system, user, { maxTokens = 3000, temperature = 0.
     openai: 'gpt-4o'
   }[cfg.provider] || '';
   const effModel = deep && deepModel ? deepModel : (cfg.model || provider.model);
+  const userContent = images.length
+    ? [{ type: 'text', text: user }, ...images.slice(0, 16).map(url => ({ type: 'image_url', image_url: { url } }))]
+    : user;
   if (deep) maxTokens = Math.max(maxTokens, 8000);
   // Token Plan 接口未开放浏览器跨域，文本统一走服务端中转
   if (cfg.provider === 'qianwen') {
     if (!API_BASE) throw new Error('Token Plan 文本接口需要服务端中转，请在部署环境中使用（当前页面未配置 API_BASE）。');
     const messages = [];
     if (system) messages.push({ role: 'system', content: system });
-    messages.push({ role: 'user', content: user });
+    messages.push({ role: 'user', content: userContent });
     // 优先异步（短提交+轮询，绕开同步长连接超时）；异步接口不可用时回退同步
     let asyncTaskId = '';
     try {
@@ -265,7 +268,7 @@ async function openAILikeChat(system, user, { maxTokens = 3000, temperature = 0.
   const model = effModel || 'gpt-4o-mini';
   const messages = [];
   if (system) messages.push({ role: 'system', content: system });
-  messages.push({ role: 'user', content: user });
+  messages.push({ role: 'user', content: userContent });
   const response = await fetch(base + '/chat/completions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + cfg.apiKey },
@@ -2096,10 +2099,12 @@ async function enrichProductEvidence(payload) {
   const products = matchedProductInfo(payload);
   if (!products.length) return buildProductEvidence(payload);
   const detailed = [];
+  payload.product_detail_images = [];
   for (const product of products) {
     try {
       const detail = await apiRequest('/api/product-detail', { product_id: product.id }, 35000);
       detailed.push({ ...product, ...detail, summary: detail.summary || product.summary, detail: detail.detail || product.detail, skus: detail.packages || product.skus });
+      payload.product_detail_images.push(...(detail.detail_images || []));
     } catch (error) {
       detailed.push({ ...product, detail_fetch_error: error.message });
     }
@@ -2177,7 +2182,7 @@ ${payload.product_evidence || buildProductEvidence(payload) || '未匹配到商�
 6. 平台收口：必须单列“为什么在携程服务市场采购”，从平台知识库选择3—5个具体理由展开，包括平台背书、品类与SKU丰富、一站式采购、品质与履约保障、送货到店、快速开票、免房置换或多样支付方式。
 7. 结尾CTA：引导酒店客户登录携程eBooking服务市场查看商品详情、核对实时价格并下单或联系BD。
 8. 全文供携程服务市场BD转发给酒店老板、店长、采购使用，绝不能写成酒店向住客推销客房。
-9. 任一事实证据不足时，写“暂无可核验数据/以商品详情页为准”，不得用空泛形容词补位。` : '';
+9. 上方附带的商品详情长图是产品卖点的最高优先级证据。先逐图识别长度、尺寸、克重、材质、刷毛软硬、触感、结构、功能、包装和适用场景，再提炼产品优势；例如只有图片明确出现“软毛、细腻、承托、释压”等文字时才能使用。\n10. 任一事实证据不足时，写“暂无可核验数据/以商品详情页为准”，不得用空泛形容词补位。` : '';
   return `请为以下任务输出内容：
 产品/主题：${payload.product}
 目标视角：${payload.persona}
@@ -2249,7 +2254,7 @@ $('generate').onclick = async event => {
       content = await openAILikeChat(
         buildSystemPrompt(payload),
         buildTaskPrompt(payload) + (deepThink ? '\n\n【深度思考要求】先系统梳理：受众与渠道特点、素材与知识库要点、可用的真实品牌/商品/价格数据、卖点优先级与结构方案；再输出成稿。推理过程不需要展示，直接给出最终内容。' : ''),
-        { maxTokens: deepThink ? 9000 : 6500, deep: deepThink }
+        { maxTokens: deepThink ? 9000 : 6500, deep: deepThink, images: payload.product_detail_images || [] }
       );
     } else {
       if (IS_GITHUB_PAGES) await ensurePuterAuth();
