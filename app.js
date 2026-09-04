@@ -27,11 +27,21 @@ function maskSecrets(text, extraKeys = []) {
   return out;
 }
 function readProxyBase() {
+  const configured = (window.TRIP_MALL_CONFIG?.API_BASE || '').trim().replace(/\/+$/, '');
+  if (window.location.hostname.endsWith('github.io') && configured) {
+    try {
+      const saved = localStorage.getItem('tripMall.proxyBase');
+      if (saved && saved.trim().replace(/\/+$/, '') !== configured) {
+        localStorage.setItem('tripMall.proxyBase', configured);
+      }
+    } catch {}
+    return configured;
+  }
   try {
     const saved = localStorage.getItem('tripMall.proxyBase');
     if (saved && saved.trim()) return saved.trim().replace(/\/+$/, '');
   } catch {}
-  return (window.TRIP_MALL_CONFIG?.API_BASE || '').replace(/\/+$/, '');
+  return configured;
 }
 const API_BASE = readProxyBase();
 const apiUrl = path => API_BASE + path;
