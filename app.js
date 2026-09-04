@@ -2125,7 +2125,13 @@ async function enrichProductEvidence(payload) {
       const props = (sku.properties || sku.props || []).map(item => typeof item === 'string' ? item : (item.propertyValue || item.value || item.name || '')).filter(Boolean);
       return [`子产品/套餐${index + 1}`, sku.name || '名称未获取', sku.price != null ? `参考价¥${sku.price}` : '', sku.original_price != null ? `原价¥${sku.original_price}` : '', sku.coupon_price != null ? `券后价¥${sku.coupon_price}` : '', minQty ? `起订量${minQty}` : '', ...props].filter(Boolean).join('；');
     });
-    const categoryNames = [...new Set(packages.map(sku => String(sku.name || '').split(/[-—【（(]/)[0].trim()).filter(Boolean))];
+    const categoryNames = [...new Set(packages.flatMap(sku => {
+      const propertyNames = (sku.properties || sku.props || []).map(item => typeof item === 'string' ? item : (item.propertyValue || item.value || item.name || '')).filter(Boolean);
+      if (propertyNames.length) return propertyNames;
+      const name = String(sku.name || '').replace(/^【[^】]+】/, '').trim();
+      const known = ['牙具','梳子','香皂','浴帽','护理包','剃须刀','洗发水','洗发露','沐浴露','护发素','润肤露','拖鞋','牙刷'];
+      return known.filter(item => name.includes(item));
+    }).filter(Boolean))];
     const params = product.params ? Object.entries(product.params).map(([key, value]) => `${key}：${value}`).join('；') : '';
     const detailText = [product.summary, product.detail].filter(Boolean).join('；');
     return [
@@ -2144,7 +2150,13 @@ async function enrichProductEvidence(payload) {
 }
 
 function isProductRecommendationArticle(payload) {
-  return payload.category === 'product' && payload.content_type === '优品推荐' && payload.channel === '公众号';
+  return String(payload.category || '').trim() === 'product'
+    && String(payload.content_type || '').includes('优品推荐')
+    && String(payload.channel || '').includes('公众号');
+}
+
+function isProductContent(payload) {
+  return String(payload.category || '').trim() === 'product';
 }
 
 function buildFocusedSystem(payload) {
@@ -2183,7 +2195,10 @@ function buildSystemPrompt(payload) {
     return `你是资深酒店运营干货内容编辑，为酒店从业者写真实、专业、可直接发布的运营干货。\n\n${INSIGHT_STANCE}\n\n${knowledgeContext(payload)}`;
   }
   const focused = buildFocusedSystem(payload);
-  if (focused) return focused;
+  if (focused) {
+    const evidence = payload.product_evidence ? `\n\n【最高优先级：商品详情接口完整证据】\n${payload.product_evidence}\n必须覆盖证据中的全部子品类；生成前逐项核对，不得只写主标题中的品类。` : '';
+    return focused + evidence;
+  }
   return `你是携程酒店服务市场（Hmall）的资深内容运营，为酒店写真实、生动、可直接发布的中文内容。\n\n${KNOWLEDGE_STANCE}\n\n${knowledgeContext(payload)}`;
 }
 
@@ -2194,9 +2209,9 @@ function buildTaskPrompt(payload) {
   const wordRequirement = wordMatch
     ? `\n\n【字数要求（最高优先级，覆盖渠道默认字数）】用户明确指定字数：${wordMatch[1]}字左右。必须严格按此字数输出，允许±10%偏差，宁缺毋滥不凑字。`
     : '';
-  const productRecommendationRules = isProductRecommendationArticle(payload) ? `
+  const productRecommendationRules = isProductContent(payload) ? `
 
-【产品类“优品推荐”公众号专用结构（最高优先级）】
+【产品类商品详情强制规则（最高优先级）】
 ${payload.product_evidence || buildProductEvidence(payload) || '未匹配到商品ID对应详情：必须明确提示“当前未获取到可核验商品详情，请补充正确商品ID”，不得继续编造产品卖点。'}
 
 必须按以下销售逻辑成稿：
@@ -2272,7 +2287,7 @@ $('generate').onclick = async event => {
       await ensureFullProductIndex();
       button.textContent = 'AI生成中…';
     }
-    payload.product_evidence = isProductRecommendationArticle(payload)
+    payload.product_evidence = isProductContent(payload)
       ? await enrichProductEvidence(payload)
       : buildProductEvidence(payload);
     let content;
