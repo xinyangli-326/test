@@ -1954,6 +1954,12 @@ function knowledgeContext(payload) {
   const stats = live.platform_stats || {};
   const isProductFocus = ['product', 'insight'].includes(payload.category);
   const sections = [];
+  if (isProductRecommendationArticle(payload)) {
+    const style = knowledge.copywriting_styles?.product_recommendation_wechat || {};
+    const structure = Array.isArray(style.structure) ? style.structure.join(' → ') : '';
+    const rules = Array.isArray(style.writing_rules) ? style.writing_rules.map(item => `· ${item}`).join('\n') : '';
+    if (structure || rules) sections.push(`【优品推荐公众号优秀结构】\n结构：${structure}\n${rules}\n数据规则：${style.source_note || '所有数字与点评必须有可核验来源'}`);
+  }
   if (!isProductFocus && mp.what_is) sections.push(`【服务市场是什么】${mp.what_is}`);
   if (!focusedProduct) sections.push(`【服务市场产品体系】\n${catalog || PRODUCT_BRIEF}`);
   if (!isProductFocus && guarantees) sections.push(`【官方六大服务保障】${guarantees}`);
@@ -2109,7 +2115,7 @@ async function enrichProductEvidence(payload) {
       detailed.push({ ...product, ...detail, summary: detail.summary || product.summary, detail: detail.detail || product.detail, skus: detail.packages || product.skus });
       payload.product_detail_images.push(...(detail.detail_images || []));
     } catch (error) {
-      detailed.push({ ...product, detail_fetch_error: error.message });
+      throw new Error(`商品ID ${product.id} 详情读取失败：${error.message}。请确认最新 api/index.py 已上传到 GitHub 的 api 文件夹并完成 Vercel 部署。为避免空泛文案，本次已停止生成。`);
     }
   }
   const lines = detailed.map(product => {
@@ -2119,6 +2125,7 @@ async function enrichProductEvidence(payload) {
       const props = (sku.properties || sku.props || []).map(item => typeof item === 'string' ? item : (item.propertyValue || item.value || item.name || '')).filter(Boolean);
       return [`子产品/套餐${index + 1}`, sku.name || '名称未获取', sku.price != null ? `参考价¥${sku.price}` : '', sku.original_price != null ? `原价¥${sku.original_price}` : '', sku.coupon_price != null ? `券后价¥${sku.coupon_price}` : '', minQty ? `起订量${minQty}` : '', ...props].filter(Boolean).join('；');
     });
+    const categoryNames = [...new Set(packages.map(sku => String(sku.name || '').split(/[-—【（(]/)[0].trim()).filter(Boolean))];
     const params = product.params ? Object.entries(product.params).map(([key, value]) => `${key}：${value}`).join('；') : '';
     const detailText = [product.summary, product.detail].filter(Boolean).join('；');
     return [
@@ -2126,7 +2133,9 @@ async function enrichProductEvidence(payload) {
       `主商品名称：${product.name || '未获取'}`,
       `供应商/品牌：${product.supplier || product.params?.品牌 || '未获取'}`,
       params ? `商品参数：${params}` : '',
+      `识别出的子品类（正文必须逐类覆盖，共${categoryNames.length}类）：${categoryNames.join('、') || '未识别'}`,
       `全部子产品/套餐（共${packages.length}项，不得遗漏或只写标题品类）：\n${packageLines.join('\n') || '未获取套餐数据'}`,
+      `覆盖检查要求：成稿前逐项核对上述子品类，每个子品类至少写出1个已核验规格、功能或采购条件；若详情图没有该子品类卖点，仍需在产品清单中列出其真实名称与规格，不得省略。`,
       `商品详情页文字：${detailText || '详情卖点主要在图片中，必须读取附带长图'}`,
       product.detail_fetch_error ? `详情页读取状态：${product.detail_fetch_error}` : ''
     ].filter(Boolean).join('\n');
@@ -2193,7 +2202,7 @@ ${payload.product_evidence || buildProductEvidence(payload) || '未匹配到商�
 必须按以下销售逻辑成稿：
 1. 标题：点明真实商品名或明确品类价值，不出现商品ID。
 2. 开头先给数据/事实：只使用知识库、用户素材或上方商品证据中可核验的数据；数据必须与本商品直接相关。没有对应统计数据时，明确说明暂无可核验比例，改用已核验点评问题、采购问题或商品参数切入，严禁虚构百分比。
-3. 先识别商品是单品还是组合商品。若证据中包含多个“子产品/套餐”，必须完整识别全部品类，例如牙具、梳子、香皂、浴帽、护理包、剃须刀、洗发水、沐浴露等；不得只根据主标题写牙刷，也不得漏掉列表后半部分。\n4. 痛点拆解：解释问题为何发生，并与后文产品优势逐项对应。每个问题必须能找到一个有证据的产品参数/功能作为解决点；无法对应的痛点不要写。
+3. 先识别商品是单品还是组合商品。若证据中包含多个“子产品/套餐”，正文必须设置“本套装包含什么”或同义小节，完整列出【识别出的子品类】全部项目；每类至少出现一次，不得只根据主标题写牙具、梳子，也不得漏掉列表后半部分。生成结束前自行逐项核对覆盖情况。\n4. 痛点拆解：解释问题为何发生，并与后文产品优势逐项对应。每个问题必须能找到一个有证据的产品参数/功能作为解决点；无法对应的痛点不要写。
 5. 产品解法：只能使用“可核验商品优势与参数”，采用“问题 → 商品参数/功能 → 对酒店经营或住客体验的具体价值”表达，不得把同类产品常识写成该商品卖点。
 6. 价格策略：写明服务市场参考价；只有证据提供市场对比价时，才能计算优惠金额或折扣。未提供时明确说明暂无可核验市场对比价，改写起订量、箱规、定制、试用、交付等已核验采购条件，禁止声称比市场价便宜。
 7. 平台收口：必须单列“为什么在携程服务市场采购”，从平台知识库选择3—5个具体理由展开，包括平台背书、品类与SKU丰富、一站式采购、品质与履约保障、送货到店、快速开票、免房置换或多样支付方式。
