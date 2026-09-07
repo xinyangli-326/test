@@ -27,21 +27,11 @@ function maskSecrets(text, extraKeys = []) {
   return out;
 }
 function readProxyBase() {
-  const configured = (window.TRIP_MALL_CONFIG?.API_BASE || '').trim().replace(/\/+$/, '');
-  if (window.location.hostname.endsWith('github.io') && configured) {
-    try {
-      const saved = localStorage.getItem('tripMall.proxyBase');
-      if (saved && saved.trim().replace(/\/+$/, '') !== configured) {
-        localStorage.setItem('tripMall.proxyBase', configured);
-      }
-    } catch {}
-    return configured;
-  }
   try {
     const saved = localStorage.getItem('tripMall.proxyBase');
     if (saved && saved.trim()) return saved.trim().replace(/\/+$/, '');
   } catch {}
-  return configured;
+  return (window.TRIP_MALL_CONFIG?.API_BASE || '').replace(/\/+$/, '');
 }
 const API_BASE = readProxyBase();
 const apiUrl = path => API_BASE + path;
@@ -183,7 +173,7 @@ function imageConfigError() {
   return '未配置图片生成：请先在「AI 设置」里把图片服务商设为阿里云百炼 / 千问AI平台 Token Plan（月付套餐）或智谱 CogView 并填写 Key。';
 }
 
-async function openAILikeChat(system, user, { maxTokens = 3000, temperature = 0.85, deep = false, images = [] } = {}) {
+async function openAILikeChat(system, user, { maxTokens = 3000, temperature = 0.85, deep = false } = {}) {
   const cfg = getAIConfig();
   const provider = AI_PROVIDERS[cfg.provider] || AI_PROVIDERS.custom;
   // 深度思考：优先切到带思考能力的模型
@@ -197,20 +187,30 @@ async function openAILikeChat(system, user, { maxTokens = 3000, temperature = 0.
     openai: 'gpt-4o'
   }[cfg.provider] || '';
   const effModel = deep && deepModel ? deepModel : (cfg.model || provider.model);
-  const userContent = images.length
-    ? [{ type: 'text', text: user }, ...images.slice(0, 16).map(url => ({ type: 'image_url', image_url: { url } }))]
-    : user;
   if (deep) maxTokens = Math.max(maxTokens, 8000);
   // Token Plan 接口未开放浏览器跨域，文本统一走服务端中转
   if (cfg.provider === 'qianwen') {
-    if (!API_BASE) throw new Error('Token Plan 文本接口需要服务端中转，请在部署环境中使用（当前页面未配置 API_BASE）。');
+    // 中转候选：优先国内 FC（阿里云北京，连 token-plan 快），其次已保存地址/默认地址；health 快速自检选可用节点
+    const FC_RELAY = 'https://xinyang-krchzgdknx.cn-beijing.fcapp.run';
+    let savedBase = '';
+    try { savedBase = (localStorage.getItem('tripMall.proxyBase') || '').trim().replace(/\/+$/, ''); } catch (e) {}
+    const candidates = [FC_RELAY, savedBase || '', API_BASE || ''].filter((v, i, a) => v && a.indexOf(v) === i);
+    let relay = candidates[0] || FC_RELAY;
+    for (const b of candidates) {
+      try {
+        const hr = await fetch(b + '/api/health', { signal: AbortSignal.timeout(4000) });
+        if (hr.ok) { relay = b; break; }
+      } catch (e) {}
+    }
+    relay = relay.replace(/\/+$/, '');
+    if (!relay) throw new Error('Token Plan 文本接口需要服务端中转，请在部署环境中使用（当前页面未配置 API_BASE）。');
     const messages = [];
     if (system) messages.push({ role: 'system', content: system });
-    messages.push({ role: 'user', content: userContent });
+    messages.push({ role: 'user', content: user });
     // 优先异步（短提交+轮询，绕开同步长连接超时）；异步接口不可用时回退同步
     let asyncTaskId = '';
     try {
-      const submitResp = await fetch(apiUrl('/api/token-plan-text-async'), {
+      const submitResp = await fetch(relay + '/api/token-plan-text-async', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         signal: AbortSignal.timeout(25000),
@@ -222,7 +222,7 @@ async function openAILikeChat(system, user, { maxTokens = 3000, temperature = 0.
         const started = Date.now();
         while (Date.now() - started < 600000) {
           await new Promise(r => setTimeout(r, 4000));
-          const taskResp = await fetch(apiUrl('/api/token-plan-text-task'), {
+          const taskResp = await fetch(relay + '/api/token-plan-text-task', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             signal: AbortSignal.timeout(25000),
@@ -241,7 +241,7 @@ async function openAILikeChat(system, user, { maxTokens = 3000, temperature = 0.
       // 异步接口不可用（如模型/套餐不支持异步）时，落到下面走同步
     }
     const callChat = async () => {
-      const res = await fetch(apiUrl('/api/token-plan-chat'), {
+      const res = await fetch(relay + '/api/token-plan-chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ apiKey: cfg.apiKey, model: effModel, messages, max_tokens: maxTokens, temperature })
@@ -269,8 +269,8 @@ async function openAILikeChat(system, user, { maxTokens = 3000, temperature = 0.
     }
     const isLinkIssue = /timed out|timeout|connect|Failed to fetch|网络/i.test(firstError);
     const hint = isLinkIssue
-      ? '（中转→阿里云连接受限，多为跨境链路临时抖动，已自动重试仍失败，请稍后再试；仍不行可把文字服务商改为 阿里云百炼按量 / DeepSeek / 硅基流动 直连，不依赖中转、更稳定）'
-      : `（请确认中转后端已部署且当前网络能访问 ${API_BASE || '中转地址'}；仍不行可把文字服务商改为 阿里云百炼按量 / DeepSeek / 硅基流动 直连）`;
+      ? `（中转→阿里云连接受限（当前中转：${relay}），多为跨境链路临时抖动，已自动重试仍失败；建议在「AI 设置 → 服务端中转接口地址」填入国内 FC：https://xinyang-krchzgdknx.cn-beijing.fcapp.run 后保存刷新；仍不行可把文字服务商改为 阿里云百炼按量 / DeepSeek / 硅基流动 直连，不依赖中转、更稳定）`
+      : `（当前中转：${relay}；请确认中转后端已部署且当前网络能访问；仍不行可把文字服务商改为 阿里云百炼按量 / DeepSeek / 硅基流动 直连）`;
     throw new Error(`Token Plan 文本生成失败：${firstError}${hint}`);
   }
   const base = (cfg.baseUrl || provider.base).replace(/\/+$/, '');
@@ -278,7 +278,7 @@ async function openAILikeChat(system, user, { maxTokens = 3000, temperature = 0.
   const model = effModel || 'gpt-4o-mini';
   const messages = [];
   if (system) messages.push({ role: 'system', content: system });
-  messages.push({ role: 'user', content: userContent });
+  messages.push({ role: 'user', content: user });
   const response = await fetch(base + '/chat/completions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + cfg.apiKey },
@@ -900,14 +900,9 @@ function renderKbPosterImages() {
   box.querySelectorAll('.kb-img').forEach(btn => {
     btn.onclick = () => {
       const img = images[+btn.dataset.i];
-      const isRemoving = selectedKbImage === img.file;
-      if (!isRemoving && posterReferenceFiles.length >= 3) {
-        alert('当前已添加3张参考图，请先删除一张再选择知识库配图。');
-        return;
-      }
-      selectedKbImage = isRemoving ? '' : img.file;
+      selectedKbImage = selectedKbImage === img.file ? '' : img.file;
       renderKbPosterImages();
-      updatePosterReferenceStatus();
+      $('aiPosterStatus').textContent = selectedKbImage ? `已选知识库配图作为参考：${img.doc}（可再点取消）` : '';
     };
   });
 }
@@ -1964,12 +1959,6 @@ function knowledgeContext(payload) {
   const stats = live.platform_stats || {};
   const isProductFocus = ['product', 'insight'].includes(payload.category);
   const sections = [];
-  if (isProductRecommendationArticle(payload)) {
-    const style = knowledge.copywriting_styles?.product_recommendation_wechat || {};
-    const structure = Array.isArray(style.structure) ? style.structure.join(' → ') : '';
-    const rules = Array.isArray(style.writing_rules) ? style.writing_rules.map(item => `· ${item}`).join('\n') : '';
-    if (structure || rules) sections.push(`【优品推荐公众号优秀结构】\n结构：${structure}\n${rules}\n数据规则：${style.source_note || '所有数字与点评必须有可核验来源'}`);
-  }
   if (!isProductFocus && mp.what_is) sections.push(`【服务市场是什么】${mp.what_is}`);
   if (!focusedProduct) sections.push(`【服务市场产品体系】\n${catalog || PRODUCT_BRIEF}`);
   if (!isProductFocus && guarantees) sections.push(`【官方六大服务保障】${guarantees}`);
@@ -2081,94 +2070,6 @@ function matchedProductInfo(payload) {
   ).filter(Boolean).slice(0, 3);
 }
 
-function buildProductEvidence(payload) {
-  const products = matchedProductInfo(payload);
-  if (!products.length) return '';
-  const productLines = products.map(product => {
-    const params = product.params && typeof product.params === 'object'
-      ? Object.entries(product.params).map(([key, value]) => `${key}：${value}`).join('；')
-      : '';
-    const skuLines = Array.isArray(product.skus)
-      ? product.skus.slice(0, 50).map((sku, index) => {
-          const minQty = sku.min_qty ?? sku.minQty ?? sku.minQuantity;
-          const properties = sku.properties || sku.props || sku.packagePropertyList || [];
-          const propertyTexts = properties.map(item => typeof item === 'string' ? item : (item.propertyValue || item.value || item.name || '')).filter(Boolean);
-          const details = [`套餐${index + 1}`, sku.name, sku.price != null ? `服务市场参考价¥${sku.price}` : '', sku.original_price != null ? `原价¥${sku.original_price}` : '', sku.coupon_price != null ? `券后价¥${sku.coupon_price}` : '', minQty ? `起订量${minQty}` : '', ...propertyTexts].filter(Boolean);
-          return details.join('；');
-        }).filter(Boolean)
-      : [];
-    const verifiedAdvantages = [product.summary, product.subtitle, params, ...skuLines]
-      .filter(Boolean).join('；');
-    return [
-      `商品ID：${product.id}`,
-      `商品名称：${product.name || '未获取'}`,
-      `服务市场参考价：${product.price ? `¥${product.price}${product.unit ? '/' + product.unit : ''}` : '未获取'}`,
-      `供应商/品牌：${product.supplier || product.params?.品牌 || '未获取'}`,
-      `可核验商品优势与参数：${verifiedAdvantages || '当前商品详情库暂无可核验卖点或参数，禁止自行补写'}`,
-      `市场对比价：${product.market_price || product.compare_price || product.original_price || '未获取，禁止编造优惠金额或折扣'}`,
-      Array.isArray(product.comments) && product.comments.length
-        ? `商品评价证据：${product.comments.slice(0, 6).map(item => item.text || item).join('；')}`
-        : '商品评价证据：未获取，禁止编造评价比例或用户反馈'
-    ].join('\n');
-  });
-  return `【按商品ID匹配的可核验商品详情】\n${productLines.join('\n\n')}`;
-}
-
-async function enrichProductEvidence(payload) {
-  const products = matchedProductInfo(payload);
-  if (!products.length) return buildProductEvidence(payload);
-  const detailed = [];
-  payload.product_detail_images = [];
-  for (const product of products) {
-    try {
-      const detail = await apiRequest('/api/product-detail', { product_id: product.id }, 35000);
-      detailed.push({ ...product, ...detail, summary: detail.summary || product.summary, detail: detail.detail || product.detail, skus: detail.packages || product.skus });
-      payload.product_detail_images.push(...(detail.detail_images || []));
-    } catch (error) {
-      throw new Error(`商品ID ${product.id} 详情读取失败：${error.message}。请确认最新 api/index.py 已上传到 GitHub 的 api 文件夹并完成 Vercel 部署。为避免空泛文案，本次已停止生成。`);
-    }
-  }
-  const lines = detailed.map(product => {
-    const packages = Array.isArray(product.skus) ? product.skus : [];
-    const packageLines = packages.slice(0, 50).map((sku, index) => {
-      const minQty = sku.min_qty ?? sku.minQty ?? sku.minQuantity;
-      const props = (sku.properties || sku.props || []).map(item => typeof item === 'string' ? item : (item.propertyValue || item.value || item.name || '')).filter(Boolean);
-      return [`子产品/套餐${index + 1}`, sku.name || '名称未获取', sku.price != null ? `参考价¥${sku.price}` : '', sku.original_price != null ? `原价¥${sku.original_price}` : '', sku.coupon_price != null ? `券后价¥${sku.coupon_price}` : '', minQty ? `起订量${minQty}` : '', ...props].filter(Boolean).join('；');
-    });
-    const categoryNames = [...new Set(packages.flatMap(sku => {
-      const propertyNames = (sku.properties || sku.props || []).map(item => typeof item === 'string' ? item : (item.propertyValue || item.value || item.name || '')).filter(Boolean);
-      if (propertyNames.length) return propertyNames;
-      const name = String(sku.name || '').replace(/^【[^】]+】/, '').trim();
-      const known = ['牙具','梳子','香皂','浴帽','护理包','剃须刀','洗发水','洗发露','沐浴露','护发素','润肤露','拖鞋','牙刷'];
-      return known.filter(item => name.includes(item));
-    }).filter(Boolean))];
-    const params = product.params ? Object.entries(product.params).map(([key, value]) => `${key}：${value}`).join('；') : '';
-    const detailText = [product.summary, product.detail].filter(Boolean).join('；');
-    return [
-      `【商品ID ${product.id} 的完整详情证据】`,
-      `主商品名称：${product.name || '未获取'}`,
-      `供应商/品牌：${product.supplier || product.params?.品牌 || '未获取'}`,
-      params ? `商品参数：${params}` : '',
-      `识别出的子品类（正文必须逐类覆盖，共${categoryNames.length}类）：${categoryNames.join('、') || '未识别'}`,
-      `全部子产品/套餐（共${packages.length}项，不得遗漏或只写标题品类）：\n${packageLines.join('\n') || '未获取套餐数据'}`,
-      `覆盖检查要求：成稿前逐项核对上述子品类，每个子品类至少写出1个已核验规格、功能或采购条件；若详情图没有该子品类卖点，仍需在产品清单中列出其真实名称与规格，不得省略。`,
-      `商品详情页文字：${detailText || '详情卖点主要在图片中，必须读取附带长图'}`,
-      product.detail_fetch_error ? `详情页读取状态：${product.detail_fetch_error}` : ''
-    ].filter(Boolean).join('\n');
-  });
-  return lines.join('\n\n');
-}
-
-function isProductRecommendationArticle(payload) {
-  return String(payload.category || '').trim() === 'product'
-    && String(payload.content_type || '').includes('优品推荐')
-    && String(payload.channel || '').includes('公众号');
-}
-
-function isProductContent(payload) {
-  return String(payload.category || '').trim() === 'product';
-}
-
 function buildFocusedSystem(payload) {
   const prods = matchedProductInfo(payload);
   if (!prods.length) return null;
@@ -2205,10 +2106,7 @@ function buildSystemPrompt(payload) {
     return `你是资深酒店运营干货内容编辑，为酒店从业者写真实、专业、可直接发布的运营干货。\n\n${INSIGHT_STANCE}\n\n${knowledgeContext(payload)}`;
   }
   const focused = buildFocusedSystem(payload);
-  if (focused) {
-    const evidence = payload.product_evidence ? `\n\n【最高优先级：商品详情接口完整证据】\n${payload.product_evidence}\n必须覆盖证据中的全部子品类；生成前逐项核对，不得只写主标题中的品类。` : '';
-    return focused + evidence;
-  }
+  if (focused) return focused;
   return `你是携程酒店服务市场（Hmall）的资深内容运营，为酒店写真实、生动、可直接发布的中文内容。\n\n${KNOWLEDGE_STANCE}\n\n${knowledgeContext(payload)}`;
 }
 
@@ -2219,21 +2117,6 @@ function buildTaskPrompt(payload) {
   const wordRequirement = wordMatch
     ? `\n\n【字数要求（最高优先级，覆盖渠道默认字数）】用户明确指定字数：${wordMatch[1]}字左右。必须严格按此字数输出，允许±10%偏差，宁缺毋滥不凑字。`
     : '';
-  const productRecommendationRules = isProductContent(payload) ? `
-
-【产品类商品详情强制规则（最高优先级）】
-${payload.product_evidence || buildProductEvidence(payload) || '未匹配到商品ID对应详情：必须明确提示“当前未获取到可核验商品详情，请补充正确商品ID”，不得继续编造产品卖点。'}
-
-必须按以下销售逻辑成稿：
-1. 标题：点明真实商品名或明确品类价值，不出现商品ID。
-2. 开头先给数据/事实：只使用知识库、用户素材或上方商品证据中可核验的数据；数据必须与本商品直接相关。没有对应统计数据时，明确说明暂无可核验比例，改用已核验点评问题、采购问题或商品参数切入，严禁虚构百分比。
-3. 先识别商品是单品还是组合商品。若证据中包含多个“子产品/套餐”，正文必须设置“本套装包含什么”或同义小节，完整列出【识别出的子品类】全部项目；每类至少出现一次，不得只根据主标题写牙具、梳子，也不得漏掉列表后半部分。生成结束前自行逐项核对覆盖情况。\n4. 痛点拆解：解释问题为何发生，并与后文产品优势逐项对应。每个问题必须能找到一个有证据的产品参数/功能作为解决点；无法对应的痛点不要写。
-5. 产品解法：只能使用“可核验商品优势与参数”，采用“问题 → 商品参数/功能 → 对酒店经营或住客体验的具体价值”表达，不得把同类产品常识写成该商品卖点。
-6. 价格策略：写明服务市场参考价；只有证据提供市场对比价时，才能计算优惠金额或折扣。未提供时明确说明暂无可核验市场对比价，改写起订量、箱规、定制、试用、交付等已核验采购条件，禁止声称比市场价便宜。
-7. 平台收口：必须单列“为什么在携程服务市场采购”，从平台知识库选择3—5个具体理由展开，包括平台背书、品类与SKU丰富、一站式采购、品质与履约保障、送货到店、快速开票、免房置换或多样支付方式。
-8. 结尾CTA：引导酒店客户登录携程eBooking服务市场查看商品详情、核对实时价格并下单或联系BD。
-9. 全文供携程服务市场BD转发给酒店老板、店长、采购使用，绝不能写成酒店向住客推销客房。
-10. 上方附带的商品详情长图是产品卖点的最高优先级证据。先逐图识别长度、尺寸、克重、材质、刷毛软硬、触感、结构、功能、包装和适用场景，再提炼产品优势；例如只有图片明确出现“软毛、细腻、承托、释压”等文字时才能使用。\n11. 任一事实证据不足时，写“暂无可核验数据/以商品详情页为准”，不得用空泛形容词补位。` : '';
   return `请为以下任务输出内容：
 产品/主题：${payload.product}
 目标视角：${payload.persona}
@@ -2249,7 +2132,6 @@ ${payload.product_evidence || buildProductEvidence(payload) || '未匹配到商�
 【输出格式（必须严格遵守，逐字执行）】
 ${CHANNEL_FORMATS[payload.channel] || '按其使用场景输出完整成稿。'}
 ${wordRequirement}
-${productRecommendationRules}
 
 【硬性要求】
 1. 直接输出正文，禁止以“好的”“以下是为您准备的”“根据您的需求”等开头。
@@ -2297,15 +2179,12 @@ $('generate').onclick = async event => {
       await ensureFullProductIndex();
       button.textContent = 'AI生成中…';
     }
-    payload.product_evidence = isProductContent(payload)
-      ? await enrichProductEvidence(payload)
-      : buildProductEvidence(payload);
     let content;
     if (hasByok()) {
       content = await openAILikeChat(
         buildSystemPrompt(payload),
         buildTaskPrompt(payload) + (deepThink ? '\n\n【深度思考要求】先系统梳理：受众与渠道特点、素材与知识库要点、可用的真实品牌/商品/价格数据、卖点优先级与结构方案；再输出成稿。推理过程不需要展示，直接给出最终内容。' : ''),
-        { maxTokens: deepThink ? 9000 : 6500, deep: deepThink, images: payload.product_detail_images || [] }
+        { maxTokens: deepThink ? 9000 : 6500, deep: deepThink }
       );
     } else {
       if (IS_GITHUB_PAGES) await ensurePuterAuth();
@@ -2832,8 +2711,6 @@ function parseInstructionSize(text) {
 
 /* 按历史实际生成耗时动态预估进度条时长：第二次起进度条与实际等待时间基本同步 */
 const imageGenDurations = [];
-let posterReferenceFiles = [];
-let posterReferencePreviewUrls = [];
 
 function estimateImageDuration() {
   if (!imageGenDurations.length) return 50000;
@@ -2850,61 +2727,21 @@ function recordImageDuration(ms) {
    避免上一次的参考图"残留记忆"影响下一次生成 */
 function clearPosterRefs() {
   selectedKbImage = '';
-  posterReferenceFiles = [];
   const ref = $('aiPosterRef');
   if (ref) ref.value = '';
-  renderPosterReferenceFiles();
   const grid = $('kbPosterImgs');
   if (grid) grid.querySelectorAll('.kb-img.on').forEach(el => el.classList.remove('on'));
 }
 
-function renderPosterReferenceFiles() {
-  posterReferencePreviewUrls.forEach(url => URL.revokeObjectURL(url));
-  posterReferencePreviewUrls = [];
-  const list = $('aiPosterRefList');
-  if (!list) return;
-  list.innerHTML = posterReferenceFiles.map((file, index) => {
-    const previewUrl = URL.createObjectURL(file);
-    posterReferencePreviewUrls.push(previewUrl);
-    return `<div class="ref-thumb" title="${escapeHtml(file.name)}">
-      <img src="${previewUrl}" alt="图${['一','二','三'][index] || index + 1}">
-      <span>图${['一','二','三'][index] || index + 1} · ${escapeHtml(file.name)}</span>
-      <button type="button" data-remove-poster-ref="${index}" title="删除这张参考图">✕</button>
-    </div>`;
-  }).join('');
-  list.querySelectorAll('[data-remove-poster-ref]').forEach(button => {
-    button.onclick = () => {
-      posterReferenceFiles.splice(+button.dataset.removePosterRef, 1);
-      renderPosterReferenceFiles();
-      updatePosterReferenceStatus();
-    };
-  });
-}
-
-function updatePosterReferenceStatus() {
-  const status = $('aiPosterStatus');
-  if (!status) return;
-  const names = posterReferenceFiles.map((file, index) => `图${['一','二','三'][index] || index + 1}=${file.name}`);
-  if (selectedKbImage && posterReferenceFiles.length < 3) names.push(`图${['一','二','三'][names.length] || names.length + 1}=知识库配图`);
-  status.textContent = names.length
-    ? `已添加 ${names.length} 张参考图：${names.join('，')}（还可继续逐张添加或删除）`
-    : '';
-}
-
-/* 每次选择一张并追加，避免系统文件选择器里多选操作困难 */
+/* 选好参考图后立即提示，避免"以为传了参考图其实没挂上" */
 const aiPosterRefInput = $('aiPosterRef');
 if (aiPosterRefInput) {
   aiPosterRefInput.addEventListener('change', () => {
-    const file = aiPosterRefInput.files?.[0];
-    aiPosterRefInput.value = '';
-    if (!file) return;
-    if (posterReferenceFiles.length >= 3) {
-      alert('最多添加3张参考图，请先删除一张再继续添加。');
-      return;
-    }
-    posterReferenceFiles.push(file);
-    renderPosterReferenceFiles();
-    updatePosterReferenceStatus();
+    const files = Array.from(aiPosterRefInput.files || []).slice(0, 3);
+    const status = $('aiPosterStatus');
+    if (status) status.textContent = files.length
+      ? `已选择 ${files.length} 张参考图：${files.map((f, i) => `图${['一','二','三'][i] || i + 1}=${f.name}`).join('，')}（指令里可用「图一/图二/图三」分别引用）`
+      : '';
   });
 }
 
@@ -2912,7 +2749,7 @@ $('aiPosterBtn').onclick = async event => {
   const button = event.currentTarget;
   const t0 = Date.now();
   const progress = startProgress('aiPosterProgress', estimateImageDuration());
-  const files = posterReferenceFiles.slice(0, 3);
+  const files = Array.from($('aiPosterRef').files || []).slice(0, 3);
   const cmd = $('aiPosterCmd').value.trim();
   const extraText = $('aiPosterText').value.trim();
   // 海报只使用海报区自己的输入（指令/补充文字/参考图），无风格下拉、无任何自动注入。
@@ -2964,8 +2801,8 @@ $('aiPosterBtn').onclick = async event => {
     const lengthLine = extraText.length > 60
       ? '若文字较多，海报整体可沿参考图风格纵向自然延伸拉长，确保所有文字完整放下，延伸后仍是同一套版式与视觉语言。'
       : '';
-    const refCount = Math.min(3, files.length + (selectedKbImage ? 1 : 0));
-    const refHint = refCount > 1
+    const refCount = files.length + (selectedKbImage ? 1 : 0);
+    const refHint = (files.length + (selectedKbImage ? 1 : 0)) > 1
       ? '参考图按顺序为图一、图二、图三；用户要求中的「图一/图二/图三」即依次指代这些图，请严格按编号取用对应图片的要素。'
       : '提供的参考图为图一。';
     prompt = `请以提供的 ${refCount} 张参考图作为整体风格与质感的灵感来源，围绕本次内容设计出一张既贴合参考图气质、又像全新作品的海报。${refHint}
@@ -2990,7 +2827,7 @@ $('aiPosterBtn').onclick = async event => {
     }
   };
   button.textContent = 'AI生成中…';
-  const refNote = (files.length || selectedKbImage) ? `（附${Math.min(3, files.length + (selectedKbImage ? 1 : 0))}张参考图）` : '';
+  const refNote = (files.length || selectedKbImage) ? `（附${files.length + (selectedKbImage ? 1 : 0)}张参考图）` : '';
   $('aiPosterStatus').textContent = `正在按指令生成：${instruction.slice(0, 50)}${instruction.length > 50 ? '…' : ''}${refNote}`;
   let generatedOk = false;
   try {
