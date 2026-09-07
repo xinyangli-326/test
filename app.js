@@ -1918,7 +1918,7 @@ function knowledgeContext(payload) {
   const _idText = String(payload.product || '') + ' ' + String(payload.needs || '') + ' ' + String(payload.content_type || '');
   const _foundIds = new Set();
   (_idText.match(/id\s*(\d+)/gi) || []).forEach(m => { const v = String(m).replace(/\D/g, ''); if (_pidx[v]) _foundIds.add(v); });
-  (_idText.match(/\b(\d{4,6})\b/g) || []).forEach(v => { if (_pidx[v]) _foundIds.add(v); });
+  (_idText.match(/\b(\d{2,7})\b/g) || []).forEach(v => { if (_pidx[v]) _foundIds.add(v); });
   const _matchedProducts = [..._foundIds].map(id => _pidx[id]).slice(0, 6);
   if (_matchedProducts.length) {
     const _wantCats = new Set(_matchedProducts.map(p => p.cat).filter(Boolean));
@@ -1990,7 +1990,7 @@ ${liveCatBlock || '（当前分类暂无明细，可参考其他分类）'}`);
   const idText = String(payload.product || '') + ' ' + String(payload.needs || '') + ' ' + String(payload.content_type || '');
   const foundIds = new Set();
   (idText.match(/id\s*(\d+)/gi) || []).forEach(m => { const v = String(m).replace(/\D/g, ''); if (pidx[v]) foundIds.add(v); });
-  (idText.match(/\b(\d{4,6})\b/g) || []).forEach(v => { if (pidx[v]) foundIds.add(v); });
+  (idText.match(/\b(\d{2,7})\b/g) || []).forEach(v => { if (pidx[v]) foundIds.add(v); });
   const matchedProducts = [...foundIds].map(id => pidx[id]).slice(0, 6);
   if (matchedProducts.length) {
     const prodBlock = matchedProducts.map(p => {
@@ -2060,11 +2060,16 @@ function matchedProductInfo(payload) {
   const windowIdx = (typeof window !== 'undefined' && window.PRODUCT_INDEX) || null;
   const mp = (typeof knowledge !== 'undefined' && knowledge.marketplace) || {};
   const pidx = windowIdx || mp.product_index || {};
-  const idText = String(payload.product || '') + ' ' + String(payload.needs || '') + ' ' + String(payload.content_type || '');
   const ids = new Set();
   const add = v => { if (lookupProductRec(pidx, v)) ids.add(v); };
-  (idText.match(/id\s*(\d+)/gi) || []).forEach(m => add(String(m).replace(/\D/g, '')));
-  (idText.match(/\b(\d{4,6})\b/g) || []).forEach(v => add(v));
+  const prodText = String(payload.product || '').trim();
+  // 主题框：纯数字 ID（2-7位）或 idXXXX
+  const pureId = prodText.match(/^\d{2,7}$/);
+  if (pureId) add(pureId[0]);
+  (prodText.match(/\bid\s*(\d{2,7})\b/i) || []).forEach(m => add(m.replace(/\D/g, '')));
+  // 需求/类型里的显式 id 编号
+  const needText = String(payload.needs || '') + ' ' + String(payload.content_type || '');
+  (needText.match(/\bid\s*(\d{2,7})\b/gi) || []).forEach(m => add(m.replace(/\D/g, '')));
   return [...ids].map(id =>
     (fullProdLoaded && fullProdIndex && fullProdIndex[id]) || pidx[id] || null
   ).filter(Boolean).slice(0, 3);
@@ -2173,7 +2178,8 @@ $('generate').onclick = async event => {
   const deepThink = $('deepThink').checked;
   try {
     const needFull = payload.category === 'product' ||
-      /(^|[\s,，、])(id\s*)?\d{4,7}($|[\s,，、])|id\s*\d{4,7}/i.test(String(payload.product || ''));
+      /^\d{2,7}$/.test(String(payload.product || '').trim()) ||
+      /\bid\s*\d{2,7}\b/i.test(String(payload.product || ''));
     if (needFull) {
       button.textContent = '载入商品详情库…';
       await ensureFullProductIndex();
