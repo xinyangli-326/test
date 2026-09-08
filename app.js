@@ -2024,6 +2024,48 @@ function lookupProductRec(pidx, id) {
   return pidx[id] || (fullProdLoaded && fullProdIndex ? fullProdIndex[id] : null);
 }
 
+async function resolveTextRelay() {
+  const FC_RELAY = 'https://xinyang-krchzgdknx.cn-beijing.fcapp.run';
+  let savedBase = '';
+  try { savedBase = (localStorage.getItem('tripMall.proxyBase') || '').trim().replace(/\/+$/, ''); } catch (e) {}
+  const candidates = [FC_RELAY, savedBase || '', API_BASE || ''].filter((v, i, a) => v && a.indexOf(v) === i);
+  let relay = candidates[0] || FC_RELAY;
+  for (const b of candidates) {
+    try {
+      const hr = await fetch(b + '/api/health', { signal: AbortSignal.timeout(4000) });
+      if (hr.ok) { relay = b; break; }
+    } catch (e) {}
+  }
+  return (relay || '').replace(/\/+$/, '');
+}
+
+async function enrichProductVision(product) {
+  const cfg = getAIConfig();
+  if (!cfg.apiKey) return '';
+  const model = /^qwen3\.8-(max|flash)$/i.test(String(cfg.model || '')) ? cfg.model : 'qwen3.8-flash';
+  const urls = [];
+  for (const u of [...(product.pics || []), ...((product.detail && product.detail.imgs) || [])]) {
+    if (u && !urls.includes(u)) urls.push(u);
+    if (urls.length >= 3) break;
+  }
+  if (!urls.length) return '';
+  const relay = await resolveTextRelay();
+  if (!relay) return '';
+  const content = [
+    { type: 'text', text: '你是酒店采购商品信息提取助手。下面是该商品的详情图（含图文海报/规格表）。请提取并整理成可写进文案的要点：1) 品牌全称与完整商品名；2) 核心卖点（最多4条，每条一句话）；3) 材质/规格/尺寸/容量等参数；4) 起订量/包装；5) 适用房型或使用场景；6) 图内出现的其它具体数字或描述。要求：只输出要点列表（每行一条，用【】标分类）；信息不足写“图内未注明”，绝不能编造；不要复述问题。' },
+    ...urls.map(u => ({ type: 'image_url', image_url: { url: u } }))
+  ];
+  const messages = [{ role: 'user', content }];
+  const res = await fetch(relay + '/api/token-plan-chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ apiKey: cfg.apiKey, model, messages, max_tokens: 1200, temperature: 0.2 })
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `视觉提炼失败（${res.status}）`);
+  return String(data.content || data.error || '').trim();
+}
+
 function matchedProductInfo(payload) {
   const windowIdx = (typeof window !== 'undefined' && window.PRODUCT_INDEX) || null;
   const mp = (typeof knowledge !== 'undefined' && knowledge.marketplace) || {};
@@ -2062,6 +2104,7 @@ function buildFocusedSystem(payload) {
       (p.subtitle && !/^id\s*\d+/i.test(String(p.subtitle)) ? `  副标题：${p.subtitle}\n` : '') +
       (p.summary ? `  核心卖点（可改写引用，勿照抄）：${String(p.summary).slice(0, 1000)}\n` : '') +
       skuLine + cmtLine +
+      (p.vision ? `  详情图要点（AI 从商品详情图提取，可直接引用，勿照抄）：\n${String(p.vision).slice(0, 2000)}\n` : '') +
       (params ? `  真实参数：${params}\n` : '');
   }).join('\n');
   return `你是携程酒店服务市场（TripMALL）的资深内容运营，为酒店写真实、生动、可直接发布的中文内容。
@@ -2152,6 +2195,25 @@ $('generate').onclick = async event => {
       button.textContent = '载入商品详情库…';
       await ensureFullProductIndex();
       button.textContent = 'AI生成中…';
+    }
+    // 商品详情图→视觉提炼（qwen3.8-max/flash），并入提示词；失败自动跳过
+    if (payload.category === 'product') {
+      try {
+        const prods = matchedProductInfo(payload);
+        const p0 = prods[0];
+        if (p0 && ((p0.pics && p0.pics.length) || (p0.detail && p0.detail.imgs && p0.detail.imgs.length))) {
+          const pid = String(p0.id);
+          let vision = '';
+          try { vision = localStorage.getItem('tripMall.pVision.' + pid) || ''; } catch (e) {}
+          if (!vision) {
+            button.textContent = '读取商品详情图…';
+            vision = await enrichProductVision(p0).catch(() => '');
+            if (vision) { try { localStorage.setItem('tripMall.pVision.' + pid, vision); } catch (e) {} }
+            button.textContent = 'AI生成中…';
+          }
+          if (vision) p0.vision = vision;
+        }
+      } catch (e) { /* 视觉失败不影响生成 */ }
     }
     let content;
     if (hasByok()) {
