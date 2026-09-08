@@ -207,9 +207,10 @@ async function openAILikeChat(system, user, { maxTokens = 3000, temperature = 0.
     const messages = [];
     if (system) messages.push({ role: 'system', content: system });
     messages.push({ role: 'user', content: user });
-    // 优先异步（短提交+轮询，绕开同步长连接超时）；异步接口不可用时回退同步
-    let asyncTaskId = '';
-    try {
+    // flash 快模型：优先异步（短提交+轮询）；非 flash（max/plus/pro 等）响应慢，直接走同步长等待（服务端超时已放宽到 540s）
+    if (/flash/i.test(effModel)) {
+      let asyncTaskId = '';
+      try {
       const submitResp = await fetch(relay + '/api/token-plan-text-async', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -236,9 +237,10 @@ async function openAILikeChat(system, user, { maxTokens = 3000, temperature = 0.
         }
         throw new Error('文本任务超过10分钟未完成，请稍后重试');
       }
-    } catch (asyncErr) {
-      if (asyncTaskId) throw asyncErr; // 任务已提交，勿重复调用/计费
-      // 异步接口不可用（如模型/套餐不支持异步）时，落到下面走同步
+      } catch (asyncErr) {
+        if (asyncTaskId) throw asyncErr; // 任务已提交，勿重复调用/计费
+        // 异步接口不可用（如模型/套餐不支持异步）时，落到下面走同步
+      }
     }
     const callChat = async () => {
       const res = await fetch(relay + '/api/token-plan-chat', {
@@ -805,7 +807,7 @@ $('aiTest').onclick = async () => {
   lsSet(AI_KEY, cfg);
   $('aiTestStatus').textContent = '测试中…';
   try {
-    const text = await openAILikeChat('你是测试助手', '请只回复四个字：连接成功', { maxTokens: 50 });
+    const text = await openAILikeChat('你是测试助手', '请只回复四个字：连接成功', { maxTokens: 400 });
     $('aiTestStatus').textContent = `测试成功：${String(text).slice(0, 40)}`;
   } catch (error) {
     $('aiTestStatus').textContent = `测试失败：${error.message}`;
