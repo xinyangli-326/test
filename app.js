@@ -207,41 +207,7 @@ async function openAILikeChat(system, user, { maxTokens = 3000, temperature = 0.
     const messages = [];
     if (system) messages.push({ role: 'system', content: system });
     messages.push({ role: 'user', content: user });
-    // flash 快模型：优先异步（短提交+轮询）；非 flash（max/plus/pro 等）响应慢，直接走同步长等待（服务端超时已放宽到 540s）
-    if (/flash/i.test(effModel)) {
-      let asyncTaskId = '';
-      try {
-      const submitResp = await fetch(relay + '/api/token-plan-text-async', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        signal: AbortSignal.timeout(25000),
-        body: JSON.stringify({ apiKey: cfg.apiKey, model: effModel, messages, max_tokens: maxTokens, temperature })
-      });
-      const submitData = await submitResp.json().catch(() => ({}));
-      if (submitResp.ok && submitData.task_id) {
-        asyncTaskId = submitData.task_id;
-        const started = Date.now();
-        while (Date.now() - started < 600000) {
-          await new Promise(r => setTimeout(r, 4000));
-          const taskResp = await fetch(relay + '/api/token-plan-text-task', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            signal: AbortSignal.timeout(25000),
-            body: JSON.stringify({ task_id: asyncTaskId, apiKey: cfg.apiKey })
-          });
-          const taskData = await taskResp.json().catch(() => ({}));
-          if (!taskResp.ok) throw new Error(taskData.error || `任务查询失败（${taskResp.status}）`);
-          const status = String(taskData.task_status || 'RUNNING');
-          if (status === 'SUCCEEDED' && taskData.content) return String(taskData.content);
-          if (status === 'FAILED') throw new Error(taskData.message || '文本任务生成失败');
-        }
-        throw new Error('文本任务超过10分钟未完成，请稍后重试');
-      }
-      } catch (asyncErr) {
-        if (asyncTaskId) throw asyncErr; // 任务已提交，勿重复调用/计费
-        // 异步接口不可用（如模型/套餐不支持异步）时，落到下面走同步
-      }
-    }
+    // 文本统一走同步一次请求（国内 FC 中转延迟低；flash 直连最快，异步提交对 flash 反而引入轮询等待与重复调用）
     const callChat = async () => {
       const res = await fetch(relay + '/api/token-plan-chat', {
         method: 'POST',
