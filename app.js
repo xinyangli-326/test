@@ -2076,13 +2076,23 @@ function matchedProductInfo(payload) {
   // 主题框：纯数字 ID（2-7位）或 idXXXX
   const pureId = prodText.match(/^\d{2,7}$/);
   if (pureId) add(pureId[0]);
+  // 多商品：逗号/顿号/空格分隔的多个 ID（如 9803，7329）
+  if (payload.category === 'product') {
+    for (const tok of prodText.split(/[，,、\s;；/|]+/)) {
+      const t = tok.trim();
+      const m = t.match(/^(\d{2,7})$/);
+      if (m) add(m[1]);
+      const m2 = t.match(/^id\s*(\d{2,7})$/i);
+      if (m2) add(m2[1]);
+    }
+  }
   (prodText.match(/\bid\s*(\d{2,7})\b/i) || []).forEach(m => add(m.replace(/\D/g, '')));
   // 需求/类型里的显式 id 编号
   const needText = String(payload.needs || '') + ' ' + String(payload.content_type || '');
   (needText.match(/\bid\s*(\d{2,7})\b/gi) || []).forEach(m => add(m.replace(/\D/g, '')));
   return [...ids].map(id =>
     (fullProdLoaded && fullProdIndex && fullProdIndex[id]) || pidx[id] || null
-  ).filter(Boolean).slice(0, 3);
+  ).filter(Boolean).slice(0, 6);
 }
 
 function buildFocusedSystem(payload) {
@@ -2113,13 +2123,13 @@ function buildFocusedSystem(payload) {
 平台立场：服务市场是面向酒店客户的一站式采购平台，内容站在平台/商家角度，讲清产品为酒店创造的价值、为什么在服务市场采购更省心省力省钱；不要写成酒店对住客的自我宣传（除非用户明确要酒店视角）。
 本次要宣传的商品（**以下为唯一事实来源：商品页详情的图提炼结果、结构化的真实参数/规格/卖点。凡来源未覆盖的信息一律不写、不编造**；若可用信息很少，只写能确认的点，其余注明“详细参数以商品页面为准”，绝不空编品牌/价格/规格/克重/起订量/功能/场景）：
 ${prodBlock}
+${prods.length > 1 ? `【多商品任务：共 ${prods.length} 款，请逐款分别输出、互不混淆】每款单独出一套（标题/导语/正文/结尾），每款开头用【完整商品名】标注；严禁把某一款的卖点/参数/场景串到另一款，各款均基于各自真实信息独立生成。\n` : ''}
 写作要求：**把上面“核心卖点/规格SKU/起订量/适用属性”具体化写进正文**——比如写清尺寸、容量、材质、每箱数量、起订门槛、适用酒店档次或房型，并结合商品使用场景（入住体验、清洁效率、客房布置、节能降耗等）展开，禁止写成“高品质、好口碑”这类任何产品都能套的空话；价格写“参考价”，注明“以服务市场页面为准”。
 **禁止输出商品ID**：标题与正文一律不得出现任何数字编号（如 1556、id1556）或“搜索ID”之类表述；需要指代商品时，必须使用它的完整真实名称与品牌（如“红杉树 60*40支全棉加密条纹床单”），并至少在标题或导语点明真实商品名/品牌，让读者明确知道写的是哪一款。
 **禁止销量类表述**：全程不得出现“销量、已售N件、热卖/爆卖N件、参考销量”等销量信息（可用的事实只有：品牌、材质、规格尺寸、包装/箱规、起订量、价格、定制与适用场景）。
-**反模板 + IP 价值（重点）**：
+**反模板 + 多样化（重点）**：
 1) 禁止任何品类都能套的开头与句子，如“孩子进门先找……”“家长/爸妈拍照发圈”“亲子时光”“寓教于乐”“解锁新玩法”等；必须落到本商品真实功能/材质/尺寸/场景，写出具体动作与画面（如“二胎家庭把两张单人床拼成大床，中间的防掉挡板……”）。
-2) 商品**有明确 IP/IP联名**（如蛋仔派对、奥特曼、奶龙、B.Duck、小黄鸭、小帅等）时，务必以 IP 价值为核心主线：开篇先讲清这个 IP 是谁、自带知名度与目标人群（亲子家庭/年轻人/粉丝）、话题度与社交传播力、拍照打卡属性，以及“为酒店做差异化房型、自带流量、支撑房型溢价、便于内容传播”的理由，再落到房内产品与场景；对 IP 的知名度与人设只做定性描述（如“国民级休闲游戏、深受亲子家庭与年轻人喜爱”“IP 自带忠实粉丝与社交话题”），**禁止编造具体粉丝量、下载量、销量等数字**。商品**没有明确 IP** 时，正常写产品功能与适用场景即可，不要虚构 IP，也不要强行往 IP 上靠。
-3) 若需输出多条（如朋友圈3条），每条的人群/角度/场景互不相同（可覆盖：二胎同住、生日或纪念日、本地周末遛娃、隔代带娃、亲子度假、傍晚哄睡、粉丝打卡等），且至少一条落在 IP 本身的价值与引流理由上。
+2) 若需输出多条（如朋友圈3条），每条的人群/角度/场景互不相同，禁止同义反复。
 → 点出平台支撑点到即止（免房置换/集采/送货到店等可作为采购理由）→ 结尾给明确行动（去服务市场下单/私信领方案）。不夸大、不绝对化、不用“放心/低价/售后退货/纠纷”等掉价字眼。按所选渠道格式输出：公众号=抓眼球标题+导语+分段正文+CTA；朋友圈=3条各150-250字；小红书=标题+正文+话题标签。`;
 }
 
@@ -2206,18 +2216,33 @@ $('generate').onclick = async event => {
     if (payload.category === 'product') {
       try {
         const prods = matchedProductInfo(payload);
-        const p0 = prods[0];
-        if (p0 && ((p0.pics && p0.pics.length) || (p0.detail && p0.detail.imgs && p0.detail.imgs.length))) {
-          const pid = String(p0.id);
+        // 校验是否有缺失的 ID
+        const want = [];
+        for (const tok of String(payload.product || '').trim().split(/[，,、\s;；/|]+/)) {
+          const t = tok.trim();
+          const m = t.match(/^(\d{2,7})$/);
+          if (m) want.push(m[1]);
+          const m2 = t.match(/^id\s*(\d{2,7})$/i);
+          if (m2) want.push(m2[1]);
+        }
+        if (want.length && prods.length < want.length) {
+          const have = new Set(prods.map(p => String(p.id)));
+          const missing = want.filter(id => !have.has(id));
+          if (missing.length) throw new Error('商品详情库中未找到：' + missing.join('，') + '（请核对 ID 或稍后重试）。');
+        }
+        // 对每款商品逐一读详情图要点
+        for (const p of prods) {
+          if (!(p.pics && p.pics.length) && !(p.detail && p.detail.imgs && p.detail.imgs.length)) continue;
+          const pid = String(p.id);
           let vision = '';
           try { vision = localStorage.getItem('tripMall.pVision.' + pid) || ''; } catch (e) {}
           if (!vision) {
             button.textContent = '读取商品详情图…';
-            vision = await enrichProductVision(p0).catch(() => '');
+            vision = await enrichProductVision(p).catch(() => '');
             if (vision) { try { localStorage.setItem('tripMall.pVision.' + pid, vision); } catch (e) {} }
             button.textContent = 'AI生成中…';
           }
-          if (vision) p0.vision = vision;
+          if (vision) p.vision = vision;
         }
       } catch (e) { /* 视觉失败不影响生成 */ }
     }
