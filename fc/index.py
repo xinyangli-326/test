@@ -44,7 +44,7 @@ def route(environ):
     if method == "GET" and (
         path in ("/", "/health") or path.endswith("/api/health")
     ):
-        return 200, {"ok": True, "version": "fc-web-token-plan-v1"}
+        return 200, {"ok": True, "version": "fc-web-token-plan-v2-540-anthropic"}
     if method == "GET" and path.endswith("/api/knowledge"):
         return 200, app_core.knowledge_live()
 
