@@ -113,7 +113,7 @@ const AI_PROVIDERS = {
   },
   qianwen: {
     name: '千问AI平台 Token Plan（月付套餐）', base: 'https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1', model: 'qwen3.8-max', imageModel: 'qwen-image-3.0-pro',
-    models: ['qwen3.8-max', 'qwen3.7-max', 'qwen3.7-plus', 'qwen3.6-flash', 'deepseek-v4-pro', 'deepseek-v4-flash', 'glm-5.2'], recommend: 'qwen3.8-max'
+    models: ['qwen3.8-max', 'qwen3.8-flash', 'qwen3.7-max', 'qwen3.7-plus', 'qwen3.6-flash', 'deepseek-v4-pro-0813', 'deepseek-v4-pro', 'deepseek-v4-flash-0731', 'deepseek-v4-flash', 'glm-5.2'], recommend: 'qwen3.8-max'
   },
   openai: {
     name: 'OpenAI', base: 'https://api.openai.com/v1', model: 'gpt-4o', imageModel: 'gpt-image-1',
