@@ -2092,7 +2092,7 @@ function matchedProductInfo(payload) {
   (needText.match(/\bid\s*(\d{2,7})\b/gi) || []).forEach(m => add(m.replace(/\D/g, '')));
   return [...ids].map(id =>
     (fullProdLoaded && fullProdIndex && fullProdIndex[id]) || pidx[id] || null
-  ).filter(Boolean).slice(0, 6);
+  ).filter(Boolean).slice(0, 12);
 }
 
 function buildFocusedSystem(payload) {
@@ -2212,39 +2212,34 @@ $('generate').onclick = async event => {
       await ensureFullProductIndex();
       button.textContent = 'AI生成中…';
     }
-    // 商品详情图→视觉提炼（qwen3.8-max/flash），并入提示词；失败自动跳过
+    // 多商品：读详情图；缺失 ID 记录到 genMissing，其余照常生成
+    let genMissing = [];
     if (payload.category === 'product') {
-      try {
-        const prods = matchedProductInfo(payload);
-        // 校验是否有缺失的 ID
-        const want = [];
-        for (const tok of String(payload.product || '').trim().split(/[，,、\s;；/|]+/)) {
-          const t = tok.trim();
-          const m = t.match(/^(\d{2,7})$/);
-          if (m) want.push(m[1]);
-          const m2 = t.match(/^id\s*(\d{2,7})$/i);
-          if (m2) want.push(m2[1]);
+      const prods = matchedProductInfo(payload);
+      const want = [];
+      for (const tok of String(payload.product || '').trim().split(/[，,、\s;；/|]+/)) {
+        const t = tok.trim();
+        const m = t.match(/^(\d{2,7})$/);
+        if (m) want.push(m[1]);
+        const m2 = t.match(/^id\s*(\d{2,7})$/i);
+        if (m2) want.push(m2[1]);
+      }
+      const have = new Set(prods.map(p => String(p.id)));
+      genMissing = want.filter(id => !have.has(id));
+      // 对每款商品逐一读详情图要点（失败自动跳过该款，不影响其它）
+      for (const p of prods) {
+        if (!(p.pics && p.pics.length) && !(p.detail && p.detail.imgs && p.detail.imgs.length)) continue;
+        const pid = String(p.id);
+        let vision = '';
+        try { vision = localStorage.getItem('tripMall.pVision.' + pid) || ''; } catch (e) {}
+        if (!vision) {
+          button.textContent = '读取商品详情图…';
+          vision = await enrichProductVision(p).catch(() => '');
+          if (vision) { try { localStorage.setItem('tripMall.pVision.' + pid, vision); } catch (e) {} }
+          button.textContent = 'AI生成中…';
         }
-        if (want.length && prods.length < want.length) {
-          const have = new Set(prods.map(p => String(p.id)));
-          const missing = want.filter(id => !have.has(id));
-          if (missing.length) throw new Error('商品详情库中未找到：' + missing.join('，') + '（请核对 ID 或稍后重试）。');
-        }
-        // 对每款商品逐一读详情图要点
-        for (const p of prods) {
-          if (!(p.pics && p.pics.length) && !(p.detail && p.detail.imgs && p.detail.imgs.length)) continue;
-          const pid = String(p.id);
-          let vision = '';
-          try { vision = localStorage.getItem('tripMall.pVision.' + pid) || ''; } catch (e) {}
-          if (!vision) {
-            button.textContent = '读取商品详情图…';
-            vision = await enrichProductVision(p).catch(() => '');
-            if (vision) { try { localStorage.setItem('tripMall.pVision.' + pid, vision); } catch (e) {} }
-            button.textContent = 'AI生成中…';
-          }
-          if (vision) p.vision = vision;
-        }
-      } catch (e) { /* 视觉失败不影响生成 */ }
+        if (vision) p.vision = vision;
+      }
     }
     let content;
     if (hasByok()) {
@@ -2262,6 +2257,7 @@ $('generate').onclick = async event => {
         content = await puterChat(buildGeneratePrompt(payload));
       }
     }
+    if (genMissing.length) content = content + '\n\n⚠️ 以下商品 ID 未找到/未生成：' + genMissing.join('，') + '（请核对 ID，或该商品可能不在已抓取的详情库中）';
     $('result').textContent = content;
     lastCopy = content;
     lastCopyOriginal = content;
