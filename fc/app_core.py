@@ -87,6 +87,40 @@ def _token_plan_error(resp, label):
     return f"Token Plan {label}接口错误（{resp.status_code}）：{str(text)[:200]}{hint}"
 
 
+def _token_plan_chat_anthropic(p):
+    """Token Plan 文本 Anthropic 兼容端点：部分模型（DeepSeek/GLM 等）在 OpenAI 兼容端点返回空正文，需走此端点"""
+    api_key = str(p.get("apiKey") or "").strip()
+    model = str(p.get("model") or "qwen3.8-max").strip()
+    messages = p.get("messages") or []
+    payload = {
+        "model": model,
+        "max_tokens": int(p.get("max_tokens") or 3000),
+        "messages": messages,
+    }
+    temperature = p.get("temperature")
+    if temperature is not None:
+        payload["temperature"] = float(temperature)
+    resp = _token_plan_call(
+        TOKEN_PLAN_BASE + "/apps/anthropic/v1/messages",
+        api_key,
+        payload,
+        timeout=540,
+        headers={"anthropic-version": "2023-06-01"},
+    )
+    if resp.status_code != 200:
+        raise RuntimeError(_token_plan_error(resp, "文本"))
+    data = resp.json()
+    content = "".join(
+        str(block.get("text") or "")
+        for block in (data.get("content") or [])
+        if isinstance(block, dict) and block.get("type") == "text"
+    )
+    if not content:
+        out = data.get("output") or {}
+        content = str(out.get("text") or out.get("content") or "")
+    return content
+
+
 def token_plan_chat(p):
     """Token Plan 文本中转：走官方开放给文本的 OpenAI 兼容接口。
     注意：Token Plan 只开放文本的 OpenAI/Anthropic 兼容端点（/compatible-mode/v1、/apps/anthropic），
@@ -107,21 +141,32 @@ def token_plan_chat(p):
         TOKEN_PLAN_BASE + "/compatible-mode/v1/chat/completions",
         api_key,
         payload,
+        timeout=540,
     )
-    if resp.status_code != 200:
-        raise RuntimeError(_token_plan_error(resp, "文本"))
-    data = resp.json()
+    raw = ""
     content = ""
-    # 兼容 OpenAI 格式：choices 在顶层；同时兜底原生 output.choices
-    choices = data.get("choices") or (data.get("output") or {}).get("choices")
-    if isinstance(choices, list) and choices:
-        msg = choices[0].get("message") or {}
-        content = str(msg.get("content") or choices[0].get("text") or "")
+    if resp.status_code == 200:
+        data = resp.json()
+        raw = str(data)[:240]
+        # 兼容 OpenAI 格式：choices 在顶层；同时兜底原生 output.choices
+        choices = data.get("choices") or (data.get("output") or {}).get("choices")
+        if isinstance(choices, list) and choices:
+            msg = choices[0].get("message") or {}
+            c0 = msg.get("content")
+            if isinstance(c0, list):
+                c0 = "".join(str(x.get("text") or "") for x in c0 if isinstance(x, dict))
+            content = str(c0 or choices[0].get("text") or "")
+        if not content:
+            content = str((data.get("output") or {}).get("text") or "")
     if not content:
-        content = str((data.get("output") or {}).get("text") or "")
-    if not content:
-        raise ValueError("Token Plan 返回内容为空")
-    return {"content": content}
+        # OpenAI 兼容端点无正文时，自动回退 Anthropic 兼容端点（DeepSeek/GLM 等模型）
+        try:
+            content = _token_plan_chat_anthropic(p)
+        except Exception:
+            content = ""
+    if content:
+        return {"content": content}
+    raise ValueError("Token Plan 返回内容为空（OpenAI 与 Anthropic 兼容端点均无正文）" + ("；响应：" + raw if raw else ""))
 
 
 def token_plan_text_async(p):
