@@ -1102,7 +1102,6 @@ const LS = {
   profile: 'tripMall.profile',
   structure: 'tripMall.structure',
   materials: 'tripMall.materials',
-  ganhuo: 'tripMall.ganhuoDocs',
   posterStyle: 'tripMall.posterStyle',
   drafts: 'tripMall.drafts',
   copyHistory: 'tripMall.history.copy',
@@ -1123,40 +1122,6 @@ let materials = lsGet(LS.materials, []);
 let drafts = lsGet(LS.drafts, []);
 let copyHistory = lsGet(LS.copyHistory, []);
 let posterHistory = lsGet(LS.posterHistory, []);
-let ganhuoDocs = lsGet(LS.ganhuo, []);
-
-function renderGanhuo() {
-  if ($('ganhuoCount')) $('ganhuoCount').textContent = `干货 ${ganhuoDocs.length} 条`;
-  if ($('ganhuoList')) $('ganhuoList').innerHTML = ganhuoDocs.length
-    ? ganhuoDocs.slice(0, 12).map(g => `<div>· ${String(g.points || '').replace(/\n/g, '；')}</div>`).join('')
-    : '<div>还没有干货，粘贴链接/正文后点「学内容→干货库」。</div>';
-}
-
-$('learnGanhuoBtn').onclick = async () => {
-  const url = $('learnUrl').value.trim();
-  const txt = ($('learnContent') ? $('learnContent').value : '').trim();
-  let content = '';
-  if (url) {
-    try { const data = await apiRequest('/api/extract', { url }, 30000); content = data.content; }
-    catch (e) { content = txt; }
-  } else { content = txt; }
-  if (!content) return alert('请先粘贴链接或正文。');
-  try {
-    const points = await openAILikeChat(
-      '你是酒店营销知识提炼助手。',
-      `从下面内容提炼“干货要点/知识点/可复用观点”，作为“酒店营销·干货类知识库”。输出要点列表，每条一行、不超过30字，聚焦可复用的方法/洞察/案例/数据：\n${content.slice(0, 12000)}`,
-      { maxTokens: 1200, temperature: 0.4 }
-    );
-    if (points && points.trim()) {
-      ganhuoDocs.unshift({ date: Date.now(), source: url ? url : '正文', points: points.trim() });
-      if (ganhuoDocs.length > 2000) ganhuoDocs = ganhuoDocs.slice(0, 2000);
-      lsSet(LS.ganhuo, ganhuoDocs);
-      renderGanhuo();
-      alert('已提炼并存入「干货类知识库」，生成文案选「干货类」即可引用。');
-    } else throw new Error('提炼结果为空');
-  } catch (e) { alert('提炼失败：' + e.message); }
-};
-
 function renderLearnList() {
   if ($('learnCount')) $('learnCount').textContent = `已学习 ${materials.length} 份素材`;
   $('learnList').innerHTML = materials.length ? materials.map(item => `
@@ -1699,7 +1664,6 @@ $('structureBox').value = lsGet(LS.structure, '');
 $('structureBox').oninput = () => { lsSet(LS.structure, $('structureBox').value); };
 $('samples').oninput = () => { profileDirty = true; };
 renderLearnList();
-renderGanhuo();
 
 /* ============================ 联网研究 ============================ */
 
@@ -1825,6 +1789,7 @@ function platformSupportForProduct(text) {
 function pureInsightContext(payload) {
   const cat = knowledge.categories?.insight || {};
   const blocks = [];
+  let picked = [];
   // 先读取数据库里的公众号原文，检索最相关的几篇作为唯一内容依据
   if (ganhuoArticles.length) {
     const query = [payload && payload.product, payload && payload.needs, payload && payload.content_type].filter(Boolean).join(' ');
@@ -1835,15 +1800,15 @@ function pureInsightContext(payload) {
       for (const k of kws) if (k && hay.includes(k)) s += 1;
       return { a, s };
     }).sort((x, y) => y.s - x.s);
-    let picked = scored.filter(x => x.s > 0).slice(0, 3).map(x => x.a);
+    picked = scored.filter(x => x.s > 0).slice(0, 3).map(x => x.a);
     if (!picked.length) picked = ganhuoArticles.slice(0, 2);
     blocks.push(`【程长营公众号原文（唯一内容依据：必须严格依据以下原文中的观点/方法/步骤/话术来写，禁止编造原文没有的数字、案例或结论；标题与文风也按原文模仿）】\n` +
       picked.map(a => `■ ${a.title}（${a.artDate || ''}）\n${String(a.content || '').slice(0, 2600)}`).join('\n\n'));
   }
-  if (ganhuoDocs.length) {
-    const ghBlock = ganhuoDocs.slice(0, 30).map(g => `· ${String(g.points || '').slice(0, 600)}`).join('\n');
-    const styleBlock = ganhuoDocs.slice(0, 8).map(g => {
-      const s = g.style || {};
+  if (picked.length) {
+    const ghBlock = picked.map(a => `· ${String(a.points || '').slice(0, 600)}`).join('\n');
+    const styleBlock = picked.map(a => {
+      const s = a.style || {};
       const titles = Array.isArray(s.titles) ? s.titles.join('；') : (s.titles || '');
       const parts = [];
       if (titles) parts.push('标题范例：' + titles);
@@ -1851,8 +1816,8 @@ function pureInsightContext(payload) {
       if (s.tone) parts.push('文风：' + s.tone);
       return parts.length ? '· ' + parts.join(' ｜ ') : '';
     }).filter(Boolean).join('\n');
-    blocks.push(`【纯引流干货知识库（定位：只讲酒店运营知识/常见问题/服务改善/解决对策；必须把下面的要点改写成具体步骤、清单、话术或案例细节展开，禁止只概述观点；禁止出现任何商品、主题房改造、价格、采购、优惠券或引导去服务市场下单的内容）】\n${ghBlock}`);
-    if (styleBlock) blocks.push(`【干货风格样本（仅供学习标题与行文，正文禁止出现“程长营”或任何具体账号/机构名称；标题与行文请模仿：营销口吻、短句钩子、数字清单/步骤体、真实案例、金句收尾、"建议收藏/转给…"等行动号召）】\n${styleBlock}`);
+    blocks.push(`【精选要点（来自上述原文，供展开成步骤/清单/话术；禁止只概述观点；禁止出现商品、主题房改造、价格、采购、优惠券或引导去服务市场下单的内容）】\n${ghBlock}`);
+    if (styleBlock) blocks.push(`【公众号文风样本（仅供模仿标题与行文，正文禁止出现“程长营”或任何具体账号/机构名称）】\n${styleBlock}`);
   }
   const topics = Array.isArray(cat.topics) ? cat.topics.join('、') : '';
   blocks.push(`【内容定位】纯引流运营干货：${cat.description || ''}${topics ? '（选题方向：' + topics + '）' : ''}`);
@@ -1981,22 +1946,6 @@ ${liveCatBlock || '（当前分类暂无明细，可参考其他分类）'}`);
       return `ID ${p.id}｜[${p.parent || ''}·${p.cat || ''}] ${p.name}｜¥${p.price || ''}${params ? '\n  商品参数：' + params : ''}`;
     }).join('\n');
     sections.push(`【匹配商品（写内容请围绕这些商品、以这里的真实数据为准，不要编造品牌/价格/规格）】\n${prodBlock}`);
-  }
-  if (ganhuoDocs.length) {
-    const ghBlock = ganhuoDocs.slice(0, 12).map(g => `· ${String(g.points || '').slice(0, 500)}`).join('\n');
-    const styleBlock = ganhuoDocs.slice(0, 6).map(g => {
-      const s = g.style || {};
-      const titles = Array.isArray(s.titles) ? s.titles.join('；') : (s.titles || '');
-      const parts = [];
-      if (titles) parts.push('标题范例：' + titles);
-      if (s.structure) parts.push('结构：' + s.structure);
-      if (s.tone) parts.push('文风：' + s.tone);
-      return parts.length ? '· ' + parts.join(' ｜ ') : '';
-    }).filter(Boolean).join('\n');
-    const styleHint = styleBlock
-      ? `\n\n【干货风格样本（仅供学习标题与行文，正文禁止出现“程长营”或任何具体账号/机构名称；写干货类标题与正文时请模仿：营销口吻、短句钩子、数字清单/步骤体、真实案例、金句收尾、"建议收藏/转给…"等行动号召）】\n${styleBlock}`
-      : '';
-    sections.push(`【干货类知识库（写干货类内容时必须引用这些要点/观点/方法作为论据，并把要点改写成具体步骤、清单、话术或案例细节展开，禁止只概述观点；生成时选「干货类」即基于此产出）】\n${ghBlock}${styleHint}`);
   }
   if (flagshipBlock && !focusedProduct) sections.push(`【服务市场热销/上新好物参考】\n${flagshipBlock}`);
   if (!isProductFocus && couponBlock) sections.push(`【服务市场当前活动券参考】\n${couponBlock}`);
