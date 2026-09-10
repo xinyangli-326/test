@@ -2012,7 +2012,7 @@ async function ensureFullProductIndex() {
   let lastErr = '';
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      const url = 'products_full.json' + (attempt ? ('?retry=' + attempt + '_' + Date.now()) : '');
+      const url = 'products_full.json?v=2' + (attempt ? ('&retry=' + attempt + '_' + Date.now()) : '');
       const r = await fetch(url, { cache: attempt ? 'reload' : 'default', signal: AbortSignal.timeout(60000) });
       if (!r.ok) { lastErr = 'HTTP ' + r.status; continue; }
       fullProdIndex = await r.json();
