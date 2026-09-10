@@ -2009,15 +2009,22 @@ let fullProdIndex = null;
 
 async function ensureFullProductIndex() {
   if (fullProdLoaded) return true;
-  try {
-    const r = await fetch('products_full.json', { cache: 'force-cache' });
-    if (!r.ok) return false;
-    fullProdIndex = await r.json();
-    fullProdLoaded = true;
-    return true;
-  } catch (e) {
-    return false;
+  let lastErr = '';
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const url = 'products_full.json' + (attempt ? ('?retry=' + attempt + '_' + Date.now()) : '');
+      const r = await fetch(url, { cache: attempt ? 'reload' : 'default', signal: AbortSignal.timeout(60000) });
+      if (!r.ok) { lastErr = 'HTTP ' + r.status; continue; }
+      fullProdIndex = await r.json();
+      fullProdLoaded = true;
+      try { window.__fullLoadError = ''; } catch (e) {}
+      return true;
+    } catch (e) {
+      lastErr = (e && e.message) || String(e);
+    }
   }
+  try { window.__fullLoadError = lastErr || 'unknown'; } catch (e) {}
+  return false;
 }
 
 function lookupProductRec(pidx, id) {
@@ -2211,6 +2218,9 @@ $('generate').onclick = async event => {
       button.textContent = '载入商品详情库…';
       await ensureFullProductIndex();
       button.textContent = 'AI生成中…';
+    }
+    if (payload.category === 'product' && !fullProdLoaded) {
+      throw new Error('商品详情库加载失败（' + ((typeof window !== 'undefined' && window.__fullLoadError) || '网络异常') + '）：请刷新页面后重试；这不是 ID 不存在。');
     }
     // 多商品：读详情图；缺失 ID 记录到 genMissing，其余照常生成
     let genMissing = [];
