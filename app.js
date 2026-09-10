@@ -1822,9 +1822,24 @@ function platformSupportForProduct(text) {
   return cleanMarketText(joined) || '免房置换、一站式集采、灵活结算等平台优势（具体以服务市场页面为准）';
 }
 
-function pureInsightContext() {
+function pureInsightContext(payload) {
   const cat = knowledge.categories?.insight || {};
   const blocks = [];
+  // 先读取数据库里的公众号原文，检索最相关的几篇作为唯一内容依据
+  if (ganhuoArticles.length) {
+    const query = [payload && payload.product, payload && payload.needs, payload && payload.content_type].filter(Boolean).join(' ');
+    const kws = query.split(/[\s,，。、；：!?！？/|（）()\[\]「」"“”]+/).filter(w => w.length >= 2);
+    const scored = ganhuoArticles.map(a => {
+      const hay = String(a.title || '') + String(a.points || '') + String(a.content || '');
+      let s = 0;
+      for (const k of kws) if (k && hay.includes(k)) s += 1;
+      return { a, s };
+    }).sort((x, y) => y.s - x.s);
+    let picked = scored.filter(x => x.s > 0).slice(0, 3).map(x => x.a);
+    if (!picked.length) picked = ganhuoArticles.slice(0, 2);
+    blocks.push(`【程长营公众号原文（唯一内容依据：必须严格依据以下原文中的观点/方法/步骤/话术来写，禁止编造原文没有的数字、案例或结论；标题与文风也按原文模仿）】\n` +
+      picked.map(a => `■ ${a.title}（${a.artDate || ''}）\n${String(a.content || '').slice(0, 2600)}`).join('\n\n'));
+  }
   if (ganhuoDocs.length) {
     const ghBlock = ganhuoDocs.slice(0, 30).map(g => `· ${String(g.points || '').slice(0, 600)}`).join('\n');
     const styleBlock = ganhuoDocs.slice(0, 8).map(g => {
@@ -1847,7 +1862,7 @@ function pureInsightContext() {
 }
 
 function knowledgeContext(payload) {
-  if (payload.category === 'insight') return pureInsightContext();
+  if (payload.category === 'insight') return pureInsightContext(payload);
   const cat = knowledge.categories?.[payload.category] || {};
   const mp = knowledge.marketplace || {};
   const catName = cat.name || payload.category || '';
@@ -2006,6 +2021,27 @@ ${liveCatBlock || '（当前分类暂无明细，可参考其他分类）'}`);
 
 let fullProdLoaded = false;
 let fullProdIndex = null;
+
+let ganhuoFullLoaded = false;
+let ganhuoArticles = [];
+
+async function ensureGanhuoArticles() {
+  if (ganhuoFullLoaded) return true;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const url = 'ganhuo_articles.json?v=1' + (attempt ? ('&retry=' + attempt + '_' + Date.now()) : '');
+      const r = await fetch(url, { cache: attempt ? 'reload' : 'default', signal: AbortSignal.timeout(30000) });
+      if (!r.ok) continue;
+      const data = await r.json();
+      if (Array.isArray(data) && data.length) {
+        ganhuoArticles = data;
+        ganhuoFullLoaded = true;
+        return true;
+      }
+    } catch (e) {}
+  }
+  return false;
+}
 
 async function ensureFullProductIndex() {
   if (fullProdLoaded) return true;
@@ -2250,6 +2286,12 @@ $('generate').onclick = async event => {
         }
         if (vision) p.vision = vision;
       }
+    }
+    // 干货类：先加载并检索公众号原文库，再基于原文生成
+    if (payload.category === 'insight') {
+      button.textContent = '载入干货原文库…';
+      await ensureGanhuoArticles();
+      button.textContent = 'AI生成中…';
     }
     let content;
     if (hasByok()) {
