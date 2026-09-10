@@ -2789,24 +2789,57 @@ function recordImageDuration(ms) {
 
 /* 每张海报独立：生成结束后清空参考图（上传文件 + 知识库配图），
    避免上一次的参考图"残留记忆"影响下一次生成 */
+let aiPosterRefUrls = [];
+function aiPosterRefStatus() {
+  const input = $('aiPosterRef');
+  const status = $('aiPosterStatus');
+  if (!input || !status) return;
+  const files = Array.from(input.files || []).slice(0, 3);
+  status.textContent = files.length
+    ? `已选择 ${files.length} 张参考图：${files.map((f, i) => `图${['一','二','三'][i] || i + 1}=${f.name}`).join('，')}（指令里可用「图一/图二/图三」分别引用）`
+    : '';
+}
+
+function renderAiPosterRefs() {
+  const input = $('aiPosterRef');
+  const list = $('aiPosterRefPreview');
+  if (!input || !list) return;
+  aiPosterRefUrls.forEach(u => { try { URL.revokeObjectURL(u); } catch (e) {} });
+  aiPosterRefUrls = [];
+  const files = Array.from(input.files || []).slice(0, 3);
+  if (!files.length) { list.innerHTML = ''; aiPosterRefStatus(); return; }
+  list.innerHTML = files.map((f, i) => {
+    const u = URL.createObjectURL(f);
+    aiPosterRefUrls.push(u);
+    const label = '图' + (['一', '二', '三'][i] || (i + 1));
+    return `<div class="ref-thumb"><img src="${u}" alt="${label}"><span>${label}</span><button type="button" data-rm="${i}" title="删除">✕</button></div>`;
+  }).join('');
+  list.querySelectorAll('[data-rm]').forEach(btn => {
+    btn.onclick = () => {
+      const keep = files.filter((_, idx) => idx !== +btn.dataset.rm);
+      const dt = new DataTransfer();
+      keep.forEach(f => dt.items.add(f));
+      try { input.files = dt.files; } catch (e) {}
+      renderAiPosterRefs();
+    };
+  });
+  aiPosterRefStatus();
+}
+
+/* 每张海报独立：生成结束后清空参考图（上传文件 + 知识库配图） */
 function clearPosterRefs() {
   selectedKbImage = '';
   const ref = $('aiPosterRef');
   if (ref) ref.value = '';
+  renderAiPosterRefs();
   const grid = $('kbPosterImgs');
   if (grid) grid.querySelectorAll('.kb-img.on').forEach(el => el.classList.remove('on'));
 }
 
-/* 选好参考图后立即提示，避免"以为传了参考图其实没挂上" */
+/* 选好参考图后立即出缩略图预览，避免"以为传了参考图其实没挂上" */
 const aiPosterRefInput = $('aiPosterRef');
 if (aiPosterRefInput) {
-  aiPosterRefInput.addEventListener('change', () => {
-    const files = Array.from(aiPosterRefInput.files || []).slice(0, 3);
-    const status = $('aiPosterStatus');
-    if (status) status.textContent = files.length
-      ? `已选择 ${files.length} 张参考图：${files.map((f, i) => `图${['一','二','三'][i] || i + 1}=${f.name}`).join('，')}（指令里可用「图一/图二/图三」分别引用）`
-      : '';
-  });
+  aiPosterRefInput.addEventListener('change', renderAiPosterRefs);
 }
 
 $('aiPosterBtn').onclick = async event => {
