@@ -1789,21 +1789,12 @@ function platformSupportForProduct(text) {
 function pureInsightContext(payload) {
   const cat = knowledge.categories?.insight || {};
   const blocks = [];
-  let picked = [];
-  // 先读取数据库里的公众号原文，检索最相关的几篇作为唯一内容依据
-  if (ganhuoArticles.length) {
-    const query = [payload && payload.product, payload && payload.needs, payload && payload.content_type].filter(Boolean).join(' ');
-    const kws = query.split(/[\s,，。、；：!?！？/|（）()\[\]「」"“”]+/).filter(w => w.length >= 2);
-    const scored = ganhuoArticles.map(a => {
-      const hay = String(a.title || '') + String(a.points || '') + String(a.content || '');
-      let s = 0;
-      for (const k of kws) if (k && hay.includes(k)) s += 1;
-      return { a, s };
-    }).sort((x, y) => y.s - x.s);
-    picked = scored.filter(x => x.s > 0).slice(0, 3).map(x => x.a);
-    if (!picked.length) picked = ganhuoArticles.slice(0, 2);
-    blocks.push(`【程长营公众号原文（唯一内容依据：必须严格依据以下原文中的观点/方法/步骤/话术来写，禁止编造原文没有的数字、案例或结论；标题与文风也按原文模仿）】\n` +
-      picked.map(a => `■ ${a.title}（${a.artDate || ''}）\n${String(a.content || '').slice(0, 2600)}`).join('\n\n'));
+  const picked = pickGanhuoArticles(payload);
+  if (picked.length) {
+    blocks.push(`【程长营公众号原文与配图（唯一内容依据：必须严格依据以下原文与配图中的观点、方法、步骤、数据、话术来写，禁止编造原文与配图没有的数字、案例或结论；标题与文风也按原文模仿）】\n` +
+      picked.map(a => `■ ${a.title}（${a.artDate || ''}）\n${String(a.content || '').slice(0, 2600)}` +
+        (a.visionNotes ? `\n【配图要点（AI读图提取）】\n${String(a.visionNotes).slice(0, 1200)}` : '')
+      ).join('\n\n'));
   }
   if (picked.length) {
     const ghBlock = picked.map(a => `· ${String(a.points || '').slice(0, 600)}`).join('\n');
@@ -1978,7 +1969,7 @@ async function ensureGanhuoArticles() {
   if (ganhuoFullLoaded) return true;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      const url = 'ganhuo_articles.json?v=2' + (attempt ? ('&retry=' + attempt + '_' + Date.now()) : '');
+      const url = 'ganhuo_articles.json?v=3' + (attempt ? ('&retry=' + attempt + '_' + Date.now()) : '');
       const r = await fetch(url, { cache: attempt ? 'reload' : 'default', signal: AbortSignal.timeout(30000) });
       if (!r.ok) continue;
       const data = await r.json();
@@ -1990,6 +1981,42 @@ async function ensureGanhuoArticles() {
     } catch (e) {}
   }
   return false;
+}
+
+function pickGanhuoArticles(payload) {
+  if (!ganhuoArticles.length) return [];
+  const query = [payload && payload.product, payload && payload.needs, payload && payload.content_type].filter(Boolean).join(' ');
+  const kws = query.split(/[\s,，。、；：!?！？/|（）()\[\]「」"“”]+/).filter(w => w.length >= 2);
+  const scored = ganhuoArticles.map(a => {
+    const hay = String(a.title || '') + String(a.points || '') + String(a.content || '');
+    let s = 0;
+    for (const k of kws) if (k && hay.includes(k)) s += 1;
+    return { a, s };
+  }).sort((x, y) => y.s - x.s);
+  let picked = scored.filter(x => x.s > 0).slice(0, 3).map(x => x.a);
+  if (!picked.length) picked = ganhuoArticles.slice(0, 2);
+  return picked;
+}
+
+async function enrichArticleVision(article) {
+  const cfg = getAIConfig();
+  if (!cfg.apiKey || !article || !Array.isArray(article.images) || !article.images.length) return '';
+  const model = /^qwen3\.8-(max|flash)$/i.test(String(cfg.model || '')) ? cfg.model : 'qwen3.8-max';
+  const relay = await resolveTextRelay();
+  if (!relay) return '';
+  const urls = article.images.slice(0, 6);
+  const content = [
+    { type: 'text', text: '你是酒店行业报告配图解读助手。下面是同一篇文章里的配图（含图表/数据截图/案例图）。请提取每张图里的关键信息：图表主题、关键数据（数字/百分比）、结论、案例要点。输出要点列表，每行一条；看不清或没有信息的写“图内信息不足”，严禁编造。' },
+    ...urls.map(u => ({ type: 'image_url', image_url: { url: u } }))
+  ];
+  const res = await fetch(relay + '/api/token-plan-chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ apiKey: cfg.apiKey, model, messages: [{ role: 'user', content }], max_tokens: 1500, temperature: 0.2 })
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `配图解读失败（${res.status}）`);
+  return String(data.content || '').trim();
 }
 
 async function ensureFullProductIndex() {
@@ -2240,6 +2267,19 @@ $('generate').onclick = async event => {
     if (payload.category === 'insight') {
       button.textContent = '载入干货原文库…';
       await ensureGanhuoArticles();
+      const picked = pickGanhuoArticles(payload);
+      for (const a of picked) {
+        if (!Array.isArray(a.images) || !a.images.length) continue;
+        const key = 'tripMall.ghVision.' + a.id;
+        let notes = '';
+        try { notes = localStorage.getItem(key) || ''; } catch (e) {}
+        if (!notes) {
+          button.textContent = '读取公众号配图…';
+          notes = await enrichArticleVision(a).catch(() => '');
+          if (notes) { try { localStorage.setItem(key, notes); } catch (e) {} }
+        }
+        if (notes) a.visionNotes = notes;
+      }
       button.textContent = 'AI生成中…';
     }
     let content;
