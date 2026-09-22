@@ -1969,7 +1969,7 @@ async function ensureGanhuoArticles() {
   if (ganhuoFullLoaded) return true;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      const url = 'ganhuo_articles.json?v=4' + (attempt ? ('&retry=' + attempt + '_' + Date.now()) : '');
+      const url = 'ganhuo_articles.json?v=5' + (attempt ? ('&retry=' + attempt + '_' + Date.now()) : '');
       const r = await fetch(url, { cache: attempt ? 'reload' : 'default', signal: AbortSignal.timeout(30000) });
       if (!r.ok) continue;
       const data = await r.json();
@@ -2004,9 +2004,9 @@ async function enrichArticleVision(article) {
   const model = /^qwen3\.8-(max|flash)$/i.test(String(cfg.model || '')) ? cfg.model : 'qwen3.8-max';
   const relay = await resolveTextRelay();
   if (!relay) return '';
-  const urls = article.images.slice(0, 6);
+  const urls = article.images.slice(0, 10);
   const content = [
-    { type: 'text', text: '你是酒店行业报告配图解读助手。下面是同一篇文章里的配图（含图表/数据截图/案例图）。请提取每张图里的关键信息：图表主题、关键数据（数字/百分比）、结论、案例要点。输出要点列表，每行一条；看不清或没有信息的写“图内信息不足”，严禁编造。' },
+    { type: 'text', text: '你是酒店行业报告配图解读助手。下面是同一篇文章里的配图（含图表/数据截图/案例图），请逐张覆盖、优先提取图表类信息：图表主题、关键数据（数字/百分比）、时间/口径、结论、案例要点。输出要点列表，每行一条并标注对应图序号；看不清或没有信息的写“图内信息不足”，严禁编造。' },
     ...urls.map(u => ({ type: 'image_url', image_url: { url: u } }))
   ];
   const res = await fetch(relay + '/api/token-plan-chat', {
