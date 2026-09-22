@@ -1969,7 +1969,7 @@ async function ensureGanhuoArticles() {
   if (ganhuoFullLoaded) return true;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      const url = 'ganhuo_articles.json?v=5' + (attempt ? ('&retry=' + attempt + '_' + Date.now()) : '');
+      const url = 'ganhuo_articles.json?v=6' + (attempt ? ('&retry=' + attempt + '_' + Date.now()) : '');
       const r = await fetch(url, { cache: attempt ? 'reload' : 'default', signal: AbortSignal.timeout(30000) });
       if (!r.ok) continue;
       const data = await r.json();
